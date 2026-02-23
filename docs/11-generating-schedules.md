@@ -122,6 +122,21 @@ To fix an understaffed shift:
 2. The assignment dialog shows you which staff are eligible and any who were excluded (with the reason).
 3. Assign a staff member manually, or consider whether on-call or per-diem staff can cover the gap.
 
+### Reading the Available Staff List
+
+Each eligible staff member in the assignment dialog shows a detail line to help you make the right choice:
+
+| Indicator | What it means |
+|-----------|--------------|
+| **Xh this week** | Hours already worked in the same week as this shift. Lower is better — they have more capacity. |
+| **Xh FTE target** | Shown for part-time staff. If their weekly hours are already at or above this number, the text turns amber — they are working above their contracted hours even before this shift. |
+| **Would OT** (red) | Assigning this shift would push the person above 40 hours for the week, incurring overtime pay. Choose someone without this badge when possible. |
+| **Prefers [shift type]** (amber) | This person prefers a different shift type (e.g., prefers evenings but this is a day shift). |
+| **Prefers [day] off** (amber) | This person listed this day as a preferred day off. |
+| **Avoids weekends** (amber) | This person prefers not to work weekends and this is a Saturday or Sunday shift. |
+
+Amber indicators are not blocking — the assignment is still allowed — but they flag that the assignment will generate a soft violation and may affect staff satisfaction.
+
 ---
 
 ## Charge Nurse Rules
