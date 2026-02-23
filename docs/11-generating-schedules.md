@@ -134,7 +134,7 @@ Each nurse already on this shift shows:
 |-----------|--------------|
 | **Xh this week** | Total hours in the same week as this shift, *including* this shift. Shown in amber if a part-time nurse is above their FTE target. |
 | **Xh FTE target** | Shown for part-time staff only. If their total is at or above this number, the text turns amber — they are working extra hours above their contracted level. |
-| **OT** (red badge) | This nurse crossed 40 hours for the week at the time they were assigned — they are in paid overtime. |
+| **OT** (red badge) | This nurse is working overtime this week — their total hours for the week exceed 40h. The badge appears on every shift that falls in the overtime zone, not just the first one to cross the threshold. |
 | **Preference mismatches** (amber) | Shift type conflict, preferred day off, or weekend avoidance — same indicators as for available staff. |
 
 #### Available Staff

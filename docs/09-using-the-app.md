@@ -178,7 +178,7 @@ Required information:
 When you click any shift in the grid, a dialog opens showing:
 
 - **Currently Assigned** — everyone on this shift, with:
-  - Badges for Charge, OT, and competency level
+  - Badges for Charge, competency level, and **OT** (red) if this nurse's total hours for the week exceed 40h — the badge appears on every overtime shift, not just the first one
   - Hours worked this week *including* this shift — shown in amber if a part-time nurse is above their FTE target
   - FTE target in parentheses for part-time staff (e.g., "28h this week (20h FTE target)")
   - Preference mismatches in amber — "Prefers evenings", "Prefers Monday off", "Avoids weekends"
