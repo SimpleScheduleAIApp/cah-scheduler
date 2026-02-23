@@ -177,7 +177,11 @@ Required information:
 
 When you click any shift in the grid, a dialog opens showing:
 
-- **Currently Assigned** — everyone on this shift, with badges for Charge, OT, and competency level
+- **Currently Assigned** — everyone on this shift, with:
+  - Badges for Charge, OT, and competency level
+  - Hours worked this week *including* this shift — shown in amber if a part-time nurse is above their FTE target
+  - FTE target in parentheses for part-time staff (e.g., "28h this week (20h FTE target)")
+  - Preference mismatches in amber — "Prefers evenings", "Prefers Monday off", "Avoids weekends"
 - **Available Staff** — all staff who pass hard scheduling rules for this shift, each showing:
   - Hours already worked this week — helps you pick someone with capacity
   - FTE target for part-time staff (shown in amber if they're already above it)

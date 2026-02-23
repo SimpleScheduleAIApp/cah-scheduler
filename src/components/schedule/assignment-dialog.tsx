@@ -46,6 +46,7 @@ interface StaffOption {
   reliabilityRating: number;
   isActive: boolean;
   eligible: boolean;
+  alreadyAssigned: boolean;
   ineligibleReasons: string[];
   weeklyHours: number;
   standardWeeklyHours: number;
@@ -73,6 +74,7 @@ export function AssignmentDialog({
   onCensusChange?: (shiftId: string, census: number | null) => void;
 }) {
   const [availableStaff, setAvailableStaff] = useState<StaffOption[]>([]);
+  const [assignedContext, setAssignedContext] = useState<Map<string, StaffOption>>(new Map());
   const [censusValue, setCensusValue] = useState<string>("");
 
   useEffect(() => {
@@ -80,11 +82,16 @@ export function AssignmentDialog({
       // Set initial census value
       setCensusValue(shift.actualCensus?.toString() ?? "");
 
-      // Fetch staff filtered through hard rules for this specific shift
+      // Fetch all staff with scheduling context for this shift.
+      // Already-assigned staff come back with alreadyAssigned: true — used to
+      // enrich the "Currently Assigned" section with hours and preference info.
       fetch(`/api/shifts/${shift.id}/eligible-staff?scheduleId=${scheduleId}`)
         .then((r) => r.json())
         .then((staff: StaffOption[]) => {
-          setAvailableStaff(staff);
+          setAvailableStaff(staff.filter((s) => !s.alreadyAssigned));
+          setAssignedContext(
+            new Map(staff.filter((s) => s.alreadyAssigned).map((s) => [s.id, s]))
+          );
         });
     }
   }, [open, shift, scheduleId]);
@@ -157,40 +164,74 @@ export function AssignmentDialog({
             <div>
               <h3 className="mb-2 text-sm font-medium">Currently Assigned</h3>
               <div className="space-y-1">
-                {shift.assignments.map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center justify-between rounded-md border px-3 py-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">
-                        {a.staffFirstName} {a.staffLastName}
-                      </span>
-                      <Badge variant="secondary" className="text-xs">
-                        {a.staffRole}
-                      </Badge>
-                      {a.isChargeNurse && (
-                        <Badge className="text-xs">Charge</Badge>
-                      )}
-                      {a.isOvertime && (
-                        <Badge variant="destructive" className="text-xs">
-                          OT
-                        </Badge>
-                      )}
-                      <span className="text-xs text-muted-foreground">
-                        Level {a.staffCompetency}/5
-                      </span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive"
-                      onClick={() => onRemove(a.id)}
+                {shift.assignments.map((a) => {
+                  const ctx = assignedContext.get(a.staffId);
+                  const shiftDayName = format(parseISO(shift.date), "EEEE");
+                  const isWeekend = [0, 6].includes(parseISO(shift.date).getDay());
+                  const prefMismatch =
+                    ctx?.preferredShift && ctx.preferredShift !== "any" && ctx.preferredShift !== shift.shiftType
+                      ? `Prefers ${ctx.preferredShift}`
+                      : null;
+                  const dayOffMismatch =
+                    ctx?.preferredDaysOff.includes(shiftDayName) ? `Prefers ${shiftDayName} off` : null;
+                  const weekendMismatch = isWeekend && ctx?.avoidWeekends ? "Avoids weekends" : null;
+                  const aboveFTE =
+                    ctx && ctx.standardWeeklyHours < 40 && ctx.weeklyHours >= ctx.standardWeeklyHours;
+
+                  return (
+                    <div
+                      key={a.id}
+                      className="flex items-center justify-between rounded-md border px-3 py-2"
                     >
-                      Remove
-                    </Button>
-                  </div>
-                ))}
+                      <div className="flex flex-col gap-0.5 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium">
+                            {a.staffFirstName} {a.staffLastName}
+                          </span>
+                          <Badge variant="secondary" className="text-xs">
+                            {a.staffRole}
+                          </Badge>
+                          {a.isChargeNurse && (
+                            <Badge className="text-xs">Charge</Badge>
+                          )}
+                          {a.isOvertime && (
+                            <Badge variant="destructive" className="text-xs">
+                              OT
+                            </Badge>
+                          )}
+                          <span className="text-xs text-muted-foreground">
+                            Level {a.staffCompetency}/5
+                          </span>
+                        </div>
+                        {ctx && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-xs ${aboveFTE ? "text-amber-600" : "text-muted-foreground"}`}>
+                              {ctx.weeklyHours}h this week
+                              {ctx.standardWeeklyHours < 40 && ` (${ctx.standardWeeklyHours}h FTE target)`}
+                            </span>
+                            {prefMismatch && (
+                              <span className="text-xs text-amber-600">{prefMismatch}</span>
+                            )}
+                            {dayOffMismatch && (
+                              <span className="text-xs text-amber-600">{dayOffMismatch}</span>
+                            )}
+                            {weekendMismatch && (
+                              <span className="text-xs text-amber-600">{weekendMismatch}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive shrink-0 ml-2"
+                        onClick={() => onRemove(a.id)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

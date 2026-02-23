@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.12] - 2026-02-23
+
+### Changed
+
+- **Assignment dialog now shows scheduling context for currently assigned staff.** Previously, the "Currently Assigned" section only displayed each nurse's name, role, Charge/OT badges, and competency level. It gave no indication of how many hours that nurse was already working that week or whether their preferences were being honoured. A manager who wanted to consider swapping someone out had to remember those details or navigate elsewhere.
+
+  The dialog now shows a second detail line under each assigned nurse — identical in layout to the detail line already shown for available staff — including:
+  - **Xh this week** — total hours in the same week as this shift, *including* this shift (since the nurse is already assigned). Shown in amber if this puts the nurse above their part-time FTE target.
+  - **FTE target** — shown in parentheses for part-time staff only (e.g., `20h this week (20h FTE target)`).
+  - **Preference mismatches** — amber labels for a preferred shift type conflict, a preferred day off, or weekend avoidance, exactly as shown for available staff.
+
+  The `isOvertime` badge was already present and remains unchanged — it is the authoritative flag computed when the assignment was made.
+
+  The context is loaded from the same `/api/shifts/[id]/eligible-staff` endpoint, which now also returns already-assigned staff (with `alreadyAssigned: true`) alongside the existing eligible/ineligible pool. The dialog separates them by flag — assigned staff enrich the "Currently Assigned" section; non-assigned staff populate "Available Staff" and "Unavailable" as before.
+
+### Files Modified
+
+- `src/app/api/shifts/[id]/eligible-staff/route.ts` — `StaffInfo` imported; `staffContext` helper extracted; `assignedResults` pass added (skips eligibility check, `alreadyAssigned: true`); both arrays combined in response; non-assigned results gain `alreadyAssigned: false`
+- `src/components/schedule/assignment-dialog.tsx` — `alreadyAssigned` added to `StaffOption`; `assignedContext` state (Map) populated from fetch response; "Currently Assigned" rows expanded to `flex-col` layout with preference mismatch + FTE context detail line
+
+---
+
 ## [1.4.10] - 2026-02-22
 
 ### Fixed

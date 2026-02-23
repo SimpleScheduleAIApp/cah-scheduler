@@ -122,9 +122,24 @@ To fix an understaffed shift:
 2. The assignment dialog shows you which staff are eligible and any who were excluded (with the reason).
 3. Assign a staff member manually, or consider whether on-call or per-diem staff can cover the gap.
 
-### Reading the Available Staff List
+### Reading the Assignment Dialog
 
-Each eligible staff member in the assignment dialog shows a detail line to help you make the right choice:
+The assignment dialog has three sections. **Currently Assigned** and **Available Staff** both show a detail line with scheduling context so you can make an informed decision about whether to add, remove, or swap someone.
+
+#### Currently Assigned Staff
+
+Each nurse already on this shift shows:
+
+| Indicator | What it means |
+|-----------|--------------|
+| **Xh this week** | Total hours in the same week as this shift, *including* this shift. Shown in amber if a part-time nurse is above their FTE target. |
+| **Xh FTE target** | Shown for part-time staff only. If their total is at or above this number, the text turns amber — they are working extra hours above their contracted level. |
+| **OT** (red badge) | This nurse crossed 40 hours for the week at the time they were assigned — they are in paid overtime. |
+| **Preference mismatches** (amber) | Shift type conflict, preferred day off, or weekend avoidance — same indicators as for available staff. |
+
+#### Available Staff
+
+Each eligible staff member shows a detail line to help you make the right choice:
 
 | Indicator | What it means |
 |-----------|--------------|

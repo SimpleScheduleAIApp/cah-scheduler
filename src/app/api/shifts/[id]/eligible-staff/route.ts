@@ -3,16 +3,20 @@ import { buildContext } from "@/lib/engine/rule-engine";
 import { SchedulerState } from "@/lib/engine/scheduler/state";
 import { passesHardRules, getRejectionReasons } from "@/lib/engine/scheduler/eligibility";
 import type { SchedulerContext } from "@/lib/engine/scheduler/types";
+import type { StaffInfo } from "@/lib/engine/rules/types";
 
 /**
  * GET /api/shifts/[id]/eligible-staff?scheduleId=xxx
  *
- * Returns all active staff (not already on this shift) with an `eligible` flag
- * and `ineligibleReasons` array. Eligible staff are shown first, sorted by
- * charge-qualified, reliability, then competency.
+ * Returns all active staff with an `eligible` flag, `ineligibleReasons` array,
+ * and scheduling context (weekly hours, FTE target, OT risk, preferences).
  *
- * This is used by the assignment dialog so managers only see staff who can
- * actually be assigned without violating hard scheduling rules.
+ * Staff already assigned to this shift are included with `alreadyAssigned: true`
+ * so the assignment dialog can enrich the "Currently Assigned" section with the
+ * same context shown for available staff.
+ *
+ * Eligible non-assigned staff are shown first, sorted by charge-qualified,
+ * reliability, then competency.
  */
 export async function GET(
   request: Request,
@@ -33,6 +37,9 @@ export async function GET(
   if (!shiftInfo) {
     return NextResponse.json({ error: "Shift not found in schedule" }, { status: 404 });
   }
+
+  // Capture date after null guard so closures can reference it without TS narrowing issues
+  const shiftDate = shiftInfo.date;
 
   // Wrap into SchedulerContext (same data, slightly different shape)
   const context: SchedulerContext = {
@@ -72,16 +79,49 @@ export async function GET(
     ruleContext.assignments.filter((a) => a.shiftId === shiftId).map((a) => a.staffId)
   );
 
-  // Evaluate each active staff member
+  // Scheduling context fields — shared shape for both assigned and non-assigned staff
+  function staffContext(s: StaffInfo) {
+    return {
+      weeklyHours: state.getWeeklyHours(s.id, shiftDate),
+      standardWeeklyHours: Math.round(Math.min(s.fte * 40, 40) * 10) / 10,
+      preferredShift: s.preferences?.preferredShift ?? null,
+      preferredDaysOff: s.preferences?.preferredDaysOff ?? [],
+      avoidWeekends: s.preferences?.avoidWeekends ?? false,
+    };
+  }
+
+  // Already-assigned staff: include with context but skip eligibility check.
+  // weeklyHours already includes this shift since it is in state.
+  const assignedResults = [...ruleContext.staffMap.values()]
+    .filter((s) => s.isActive && assignedToShift.has(s.id))
+    .map((s) => {
+      const ctx = staffContext(s);
+      return {
+        id: s.id,
+        firstName: s.firstName,
+        lastName: s.lastName,
+        role: s.role,
+        employmentType: s.employmentType,
+        icuCompetencyLevel: s.icuCompetencyLevel,
+        isChargeNurseQualified: s.isChargeNurseQualified,
+        reliabilityRating: s.reliabilityRating,
+        isActive: s.isActive,
+        eligible: false,
+        alreadyAssigned: true,
+        ineligibleReasons: [],
+        wouldCauseOT: false, // not applicable — already assigned
+        ...ctx,
+      };
+    });
+
+  // Evaluate each active staff member NOT already on this shift
   const results = [...ruleContext.staffMap.values()]
     .filter((s) => s.isActive && !assignedToShift.has(s.id))
     .map((s) => {
       const eligible = passesHardRules(s, shiftInfo, state, context);
       const ineligibleReasons = eligible ? [] : getRejectionReasons(s, shiftInfo, state, context);
-
-      const weeklyHours = state.getWeeklyHours(s.id, shiftInfo.date);
-      const standardWeeklyHours = Math.round(Math.min(s.fte * 40, 40) * 10) / 10;
-      const wouldCauseOT = weeklyHours + shiftInfo.durationHours > 40;
+      const ctx = staffContext(s);
+      const wouldCauseOT = ctx.weeklyHours + shiftInfo.durationHours > 40;
 
       return {
         id: s.id,
@@ -94,18 +134,15 @@ export async function GET(
         reliabilityRating: s.reliabilityRating,
         isActive: s.isActive,
         eligible,
+        alreadyAssigned: false,
         ineligibleReasons,
         // Scheduling context — helps manager make an informed assignment decision
-        weeklyHours,
-        standardWeeklyHours,
         wouldCauseOT,
-        preferredShift: s.preferences?.preferredShift ?? null,
-        preferredDaysOff: s.preferences?.preferredDaysOff ?? [],
-        avoidWeekends: s.preferences?.avoidWeekends ?? false,
+        ...ctx,
       };
     });
 
-  // Sort: eligible first, then charge-qualified, reliability, competency
+  // Sort non-assigned: eligible first, then charge-qualified, reliability, competency
   results.sort((a, b) => {
     if (a.eligible !== b.eligible) return a.eligible ? -1 : 1;
     if (a.isChargeNurseQualified !== b.isChargeNurseQualified)
@@ -115,5 +152,6 @@ export async function GET(
     return b.icuCompetencyLevel - a.icuCompetencyLevel;
   });
 
-  return NextResponse.json(results);
+  // Assigned staff come first so the dialog can separate them by flag, not position
+  return NextResponse.json([...assignedResults, ...results]);
 }

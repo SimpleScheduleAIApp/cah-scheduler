@@ -84,4 +84,4 @@ This application helps nurse managers create fair, compliant, and cost-effective
 
 ---
 
-*Last Updated: February 2026 — v1.4.11 (auto-generation, charge nurse rules, violations modal, overtime/weekend rule improvements, scenario switching, penalty calibration, charge protection look-ahead, PRN availability, automatic hard-violation repair, non-OT scheduling preference, marginal extra-hours display, local search safety guards, assignment dialog context indicators)*
+*Last Updated: February 2026 — v1.4.12 (auto-generation, charge nurse rules, violations modal, overtime/weekend rule improvements, scenario switching, penalty calibration, charge protection look-ahead, PRN availability, automatic hard-violation repair, non-OT scheduling preference, marginal extra-hours display, local search safety guards, assignment dialog context indicators, assigned staff hours and preference context)*
