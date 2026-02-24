@@ -91,10 +91,12 @@ describe("softPenalty", () => {
     staffMap = new Map([["staff-1", makeStaff()]]);
   });
 
-  // Baseline: no violations → penalty should be 0 (or only negative incentives)
-  it("returns 0 for a clean assignment with no preferences and no prior hours", () => {
+  // Baseline: no positive penalties → only the capacity-spreading bonus applies,
+  // producing a small negative incentive. With BALANCED overtime=1.5 and 0 prior hours:
+  //   penalty -= 1.5 × 0.1 × (40/40) = −0.15
+  it("returns a small negative (capacity-spreading incentive) for a clean assignment with no prior hours", () => {
     const p = softPenalty(makeStaff(), makeShift(), state, BALANCED, [], staffMap, false, defaultUnitConfig);
-    expect(p).toBe(0);
+    expect(p).toBeCloseTo(-0.15, 5);
   });
 
   // ── Overtime ────────────────────────────────────────────────────────────────
@@ -179,8 +181,9 @@ describe("softPenalty", () => {
   it("does not give weekend incentive for weekend-exempt staff", () => {
     const staff = makeStaff({ weekendExempt: true });
     const p = softPenalty(staff, makeShift({ date: "2026-02-14" }), state, BALANCED, [], staffMap, false, defaultUnitConfig);
-    // No weekend incentive, and no other penalties → should be 0
-    expect(p).toBe(0);
+    // Weekend incentive is skipped for exempt staff, but capacity-spreading bonus still applies:
+    //   penalty -= 1.5 × 0.1 × (40/40) = −0.15
+    expect(p).toBeCloseTo(-0.15, 5);
   });
 
   // ── Float penalty ────────────────────────────────────────────────────────────

@@ -123,6 +123,10 @@ export interface RuleContext {
   scheduleEndDate: string;
   scheduleUnit: string;
   ruleParameters: Record<string, unknown>;
+  /** Weekend shifts worked per staff in the prior schedule period. Used to seed
+   *  the scheduler's scoring so nurses who already worked many weekends recently
+   *  are deprioritised for weekend slots in the new period. */
+  historicalWeekendCounts?: Map<string, number>;
 }
 
 export interface RuleEvaluator {

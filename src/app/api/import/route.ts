@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import * as schema from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { parseExcelFile, generateTemplate, type ImportResult } from "@/lib/import/parse-excel";
 import * as XLSX from "xlsx";
@@ -196,6 +197,10 @@ function importData(data: ImportResult) {
     }).run();
   }
 
+  // Re-query staff to get their DB-assigned IDs (needed for PRN + leaves below)
+  const allImportedStaff = db.select().from(schema.staff).all();
+  const staffIdByFullName = new Map(allImportedStaff.map((s) => [`${s.firstName} ${s.lastName}`, s.id]));
+
   // 3b. Create PRN availability records for per_diem staff that have available days defined.
   //     A lightweight "PRN Import Template" schedule is created once as the FK anchor —
   //     the scheduling engine loads PRN availability from ALL schedules regardless of ID.
@@ -213,10 +218,6 @@ function importData(data: ImportResult) {
       status: "archived",
     }).run();
 
-    // Re-query staff to get their newly assigned IDs
-    const allStaff = db.select().from(schema.staff).all();
-    const staffIdByFullName = new Map(allStaff.map((s) => [`${s.firstName} ${s.lastName}`, s.id]));
-
     for (const s of prnStaff) {
       const staffId = staffIdByFullName.get(`${s.firstName} ${s.lastName}`);
       if (!staffId) continue;
@@ -226,6 +227,25 @@ function importData(data: ImportResult) {
         staffId,
         scheduleId: PRN_TEMPLATE_SCHEDULE_ID,
         availableDates,
+      }).run();
+    }
+  }
+
+  // 3c. Import staff leaves
+  if (data.leaves.length > 0) {
+    const now = new Date().toISOString();
+    for (const l of data.leaves) {
+      const staffId = staffIdByFullName.get(`${l.firstName} ${l.lastName}`);
+      if (!staffId) continue; // Skip if staff not found (name mismatch)
+      db.insert(schema.staffLeave).values({
+        staffId,
+        leaveType: l.leaveType,
+        startDate: l.startDate,
+        endDate: l.endDate,
+        status: l.status,
+        reason: l.reason,
+        submittedAt: now,
+        approvedAt: l.status === "approved" ? now : undefined,
       }).run();
     }
   }
@@ -309,6 +329,7 @@ export async function POST(request: Request) {
           units: result.units.length,
           holidays: result.holidays.length,
           censusBands: result.censusBands.length,
+          leaves: result.leaves.length,
         },
         errors: result.errors,
         warnings: result.warnings,
@@ -346,6 +367,7 @@ export async function POST(request: Request) {
         units: result.units.length,
         holidays: result.holidays.length,
         censusBands: result.censusBands.length,
+        leaves: result.leaves.length,
       },
       warnings: result.warnings,
     });
@@ -390,7 +412,23 @@ function summarisePRNDates(dates: string[]): string {
 
 // Export current database data to Excel
 function exportCurrentData(): ArrayBuffer {
-  // Query current data from database
+  // ── Evening preference migration (idempotent) ────────────────────────────
+  // Converts any remaining "evening" preferred_shift values to alternating
+  // "day" / "night" before export. Runs once; after migration all evening
+  // rows are gone so subsequent calls become a fast no-op.
+  const allPrefsForMigration = db.select().from(schema.staffPreferences).all();
+  const eveningPrefs = allPrefsForMigration
+    .filter((p) => (p.preferredShift as string) === "evening")
+    .sort((a, b) => a.staffId.localeCompare(b.staffId));
+  for (let i = 0; i < eveningPrefs.length; i++) {
+    const newShift: "day" | "night" = i % 2 === 0 ? "day" : "night";
+    db.update(schema.staffPreferences)
+      .set({ preferredShift: newShift })
+      .where(eq(schema.staffPreferences.id, eveningPrefs[i].id))
+      .run();
+  }
+
+  // Query current data from database (after migration so preferences are clean)
   const staffData = db.select().from(schema.staff).all();
   const staffPreferencesData = db.select().from(schema.staffPreferences).all();
   const prnAvailabilityData = db.select().from(schema.prnAvailability).all();
@@ -531,6 +569,34 @@ function exportCurrentData(): ArrayBuffer {
 
   const censusBandsSheet = XLSX.utils.aoa_to_sheet([censusBandsHeaders, ...censusBandsRows]);
   XLSX.utils.book_append_sheet(workbook, censusBandsSheet, "Census Bands");
+
+  // Staff Leave sheet
+  const staffLeaveData = db.select().from(schema.staffLeave).all();
+  const staffById = new Map(staffData.map((s) => [s.id, s]));
+
+  const staffLeaveHeaders = [
+    "First Name",
+    "Last Name",
+    "Leave Type",
+    "Start Date",
+    "End Date",
+    "Status",
+    "Reason",
+  ];
+  const staffLeaveRows = staffLeaveData.map((l) => {
+    const s = staffById.get(l.staffId);
+    return [
+      s?.firstName ?? "",
+      s?.lastName ?? "",
+      l.leaveType,
+      l.startDate,
+      l.endDate,
+      l.status,
+      l.reason ?? "",
+    ];
+  });
+  const staffLeaveSheet = XLSX.utils.aoa_to_sheet([staffLeaveHeaders, ...staffLeaveRows]);
+  XLSX.utils.book_append_sheet(workbook, staffLeaveSheet, "Staff Leave");
 
   // Generate buffer
   const buffer = XLSX.write(workbook, { type: "array", bookType: "xlsx" });

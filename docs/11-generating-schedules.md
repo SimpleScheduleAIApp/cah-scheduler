@@ -146,7 +146,7 @@ Each eligible staff member shows a detail line to help you make the right choice
 | **Xh this week** | Hours already worked in the same week as this shift. Lower is better — they have more capacity. |
 | **Xh FTE target** | Shown for part-time staff. If their weekly hours are already at or above this number, the text turns amber — they are working above their contracted hours even before this shift. |
 | **Would OT** (red) | Assigning this shift would push the person above 40 hours for the week, incurring overtime pay. Choose someone without this badge when possible. |
-| **Prefers [shift type]** (amber) | This person prefers a different shift type (e.g., prefers evenings but this is a day shift). |
+| **Prefers [shift type]** (amber) | This person prefers a different shift type (e.g., prefers nights but this is a day shift). |
 | **Prefers [day] off** (amber) | This person listed this day as a preferred day off. |
 | **Avoids weekends** (amber) | This person prefers not to work weekends and this is a Saturday or Sunday shift. |
 

@@ -56,6 +56,11 @@ interface ReplacementCandidate {
   source: string;
   isAvailable: boolean;
   wouldBeOvertime: boolean;
+  isEligible: boolean;
+  ineligibilityReasons: string[];
+  reasons: string[];
+  score: number;
+  hoursThisWeek: number;
 }
 
 interface ScheduleInfo {
@@ -95,9 +100,11 @@ export default function CalloutsPage() {
   const [logDialogOpen, setLogDialogOpen] = useState(false);
   const [escalationDialogOpen, setEscalationDialogOpen] = useState(false);
   const [escalationOptions, setEscalationOptions] = useState<ReplacementCandidate[]>([]);
+  const [chargeNurseRequired, setChargeNurseRequired] = useState(false);
   const [activeCalloutId, setActiveCalloutId] = useState<string | null>(null);
   const [schedules, setSchedules] = useState<ScheduleInfo[]>([]);
   const [selectedScheduleId, setSelectedScheduleId] = useState("");
+  const [staffFilter, setStaffFilter] = useState("");
   const [selectedAssignment, setSelectedAssignment] = useState<{
     assignmentId: string;
     staffId: string;
@@ -141,6 +148,7 @@ export default function CalloutsPage() {
     setLogDialogOpen(false);
     setActiveCalloutId(data.callout.id);
     setEscalationOptions(data.escalationOptions);
+    setChargeNurseRequired(data.chargeNurseRequired ?? false);
     setEscalationDialogOpen(true);
     fetchCallouts();
   }
@@ -160,11 +168,21 @@ export default function CalloutsPage() {
 
     setEscalationDialogOpen(false);
     setActiveCalloutId(null);
+    setChargeNurseRequired(false);
     fetchCallouts();
   }
 
+  async function findReplacementForCallout(calloutId: string) {
+    const res = await fetch(`/api/callouts/${calloutId}`);
+    const data = await res.json();
+    setActiveCalloutId(calloutId);
+    setEscalationOptions(data.escalationOptions ?? []);
+    setChargeNurseRequired(data.chargeNurseRequired ?? false);
+    setEscalationDialogOpen(true);
+  }
+
   // Get assignments from selected schedule for the log dialog
-  const scheduleAssignments = selectedScheduleId
+  const allScheduleAssignments = selectedScheduleId
     ? schedules
         .find((s) => s.id === selectedScheduleId)
         ?.shifts.flatMap((sh) =>
@@ -176,6 +194,21 @@ export default function CalloutsPage() {
           }))
         ) ?? []
     : [];
+
+  // Unique staff for the filter dropdown
+  const staffInSchedule = Array.from(
+    new Map(
+      allScheduleAssignments.map((a) => [
+        a.staffId,
+        { staffId: a.staffId, name: `${a.staffFirstName} ${a.staffLastName}` },
+      ])
+    ).values()
+  ).sort((a, b) => a.name.localeCompare(b.name));
+
+  // Assignments filtered to the selected staff member
+  const scheduleAssignments = staffFilter
+    ? allScheduleAssignments.filter((a) => a.staffId === staffFilter)
+    : allScheduleAssignments;
 
   return (
     <div>
@@ -229,17 +262,28 @@ export default function CalloutsPage() {
                         : "-"}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        variant={
-                          c.status === "filled"
-                            ? "default"
-                            : c.status === "open"
-                            ? "destructive"
-                            : "secondary"
-                        }
-                      >
-                        {c.status}
-                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={
+                            c.status === "filled"
+                              ? "default"
+                              : c.status === "open"
+                              ? "destructive"
+                              : "secondary"
+                          }
+                        >
+                          {c.status}
+                        </Badge>
+                        {c.status === "open" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => findReplacementForCallout(c.id)}
+                          >
+                            Find Replacement
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -250,7 +294,10 @@ export default function CalloutsPage() {
       </Card>
 
       {/* Log Callout Dialog */}
-      <Dialog open={logDialogOpen} onOpenChange={setLogDialogOpen}>
+      <Dialog open={logDialogOpen} onOpenChange={(open) => {
+        setLogDialogOpen(open);
+        if (!open) { setStaffFilter(""); setSelectedAssignment(null); }
+      }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Log a Callout</DialogTitle>
@@ -258,7 +305,14 @@ export default function CalloutsPage() {
           <div className="space-y-4">
             <div>
               <Label>Schedule</Label>
-              <Select value={selectedScheduleId} onValueChange={setSelectedScheduleId}>
+              <Select
+                value={selectedScheduleId}
+                onValueChange={(v) => {
+                  setSelectedScheduleId(v);
+                  setStaffFilter("");
+                  setSelectedAssignment(null);
+                }}
+              >
                 <SelectTrigger><SelectValue placeholder="Select schedule" /></SelectTrigger>
                 <SelectContent>
                   {schedules.map((s) => (
@@ -268,9 +322,29 @@ export default function CalloutsPage() {
               </Select>
             </div>
 
-            {scheduleAssignments.length > 0 && (
+            {staffInSchedule.length > 0 && (
               <div>
-                <Label>Assignment</Label>
+                <Label>Staff member</Label>
+                <Select
+                  value={staffFilter}
+                  onValueChange={(v) => {
+                    setStaffFilter(v);
+                    setSelectedAssignment(null);
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select staff member" /></SelectTrigger>
+                  <SelectContent>
+                    {staffInSchedule.map((s) => (
+                      <SelectItem key={s.staffId} value={s.staffId}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {staffFilter && scheduleAssignments.length > 0 && (
+              <div>
+                <Label>Shift</Label>
                 <Select
                   value={selectedAssignment?.assignmentId ?? ""}
                   onValueChange={(v) => {
@@ -284,11 +358,11 @@ export default function CalloutsPage() {
                     }
                   }}
                 >
-                  <SelectTrigger><SelectValue placeholder="Select assignment" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select shift" /></SelectTrigger>
                   <SelectContent>
                     {scheduleAssignments.map((a) => (
                       <SelectItem key={a.id} value={a.id}>
-                        {a.staffFirstName} {a.staffLastName} - {a.shiftDate} {a.shiftName}
+                        {a.shiftDate} — {a.shiftName}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -335,44 +409,97 @@ export default function CalloutsPage() {
       <Dialog open={escalationDialogOpen} onOpenChange={setEscalationDialogOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Escalation Options</DialogTitle>
+            <DialogTitle>Replacement Candidates</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground mb-4">
-            Replacement candidates sorted by escalation order:
-            Float Pool → Per Diem → Overtime → Agency
-          </p>
+
+          {/* Charge nurse warning banner */}
+          {chargeNurseRequired && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Called-out nurse held the charge role — only charge-qualified staff are eligible
+            </div>
+          )}
+
           <div className="space-y-2">
-            {escalationOptions.map((c) => (
-              <div
-                key={c.staffId}
-                className={`flex items-center justify-between rounded-md border px-3 py-2 ${
-                  !c.isAvailable ? "opacity-50" : ""
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium">
-                    {c.firstName} {c.lastName}
-                  </span>
-                  <Badge variant="secondary" className="text-xs">{c.role}</Badge>
-                  <Badge variant="outline" className="text-xs">
-                    {sourceLabels[c.source] ?? c.source}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    Level {c.icuCompetencyLevel}/5
-                  </span>
-                  {!c.isAvailable && (
-                    <span className="text-xs text-red-500">Busy</span>
+            {escalationOptions.map((c, idx) => {
+              const eligibleCount = escalationOptions.filter((x) => x.isEligible).length;
+              const showDivider = !c.isEligible && idx > 0 && escalationOptions[idx - 1].isEligible;
+              return (
+                <div key={c.staffId}>
+                  {showDivider && (
+                    <p className="py-1 text-xs font-medium text-muted-foreground">
+                      {eligibleCount === 0 ? "No eligible candidates" : "Not eligible"}
+                    </p>
                   )}
+                  <div
+                    className={`rounded-md border px-3 py-2 ${
+                      !c.isEligible
+                        ? "border-red-200 bg-red-50 opacity-70"
+                        : !c.isAvailable
+                        ? "opacity-60"
+                        : ""
+                    }`}
+                  >
+                    {/* Name row */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-sm font-medium">
+                          {c.firstName} {c.lastName}
+                        </span>
+                        <Badge variant="secondary" className="text-xs">{c.role}</Badge>
+                        <Badge variant="outline" className="text-xs">
+                          {sourceLabels[c.source] ?? c.source}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          Lv {c.icuCompetencyLevel}/5
+                        </span>
+                        {c.hoursThisWeek > 0 && (
+                          <Badge
+                            className={`text-[10px] px-1 py-0 ${
+                              c.wouldBeOvertime
+                                ? "bg-orange-500 text-white"
+                                : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {c.hoursThisWeek}h{c.wouldBeOvertime ? " OT" : " this wk"}
+                          </Badge>
+                        )}
+                        {c.isEligible && !c.isAvailable && (
+                          <span className="text-xs text-orange-500">Busy</span>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        disabled={!c.isAvailable || !c.isEligible}
+                        onClick={() => handleFillCallout(c)}
+                        className="ml-2 shrink-0"
+                      >
+                        Assign
+                      </Button>
+                    </div>
+
+                    {/* Reasons */}
+                    {c.isEligible && c.reasons.length > 0 && (
+                      <ul className="mt-1.5 space-y-0.5 pl-1">
+                        {c.reasons.map((r, i) => (
+                          <li key={i} className="text-xs text-muted-foreground">
+                            · {r}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {/* Ineligibility reasons */}
+                    {!c.isEligible && c.ineligibilityReasons.length > 0 && (
+                      <ul className="mt-1 space-y-0.5 pl-1">
+                        {c.ineligibilityReasons.map((r, i) => (
+                          <li key={i} className="text-xs text-red-600">· {r}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 </div>
-                <Button
-                  size="sm"
-                  disabled={!c.isAvailable}
-                  onClick={() => handleFillCallout(c)}
-                >
-                  Assign
-                </Button>
-              </div>
-            ))}
+              );
+            })}
             {escalationOptions.length === 0 && (
               <p className="text-sm text-muted-foreground">No candidates available.</p>
             )}

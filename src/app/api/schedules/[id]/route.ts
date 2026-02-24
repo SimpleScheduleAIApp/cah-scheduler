@@ -76,9 +76,10 @@ export async function GET(
     .where(eq(assignment.scheduleId, id))
     .all();
 
-  // Group assignments by shift
+  // Group assignments by shift; exclude called-out nurses from the grid
   const assignmentsByShift = new Map<string, typeof assignments>();
   for (const a of assignments) {
+    if (a.status === "called_out") continue;
     const list = assignmentsByShift.get(a.shiftId) ?? [];
     list.push(a);
     assignmentsByShift.set(a.shiftId, list);

@@ -321,19 +321,15 @@ describe("weekend-fairness rule", () => {
 
 // ─── weekend-count ────────────────────────────────────────────────────────────
 describe("weekend-count rule", () => {
-  it("flags active staff below required weekend count", () => {
+  it("does not flag staff below required weekend count (shortfall is not a violation)", () => {
     const staff = makeStaff({ id: "staff-1", isActive: true, weekendExempt: false });
-    // Staff works only 1 weekend shift (required 3)
+    // Staff works only 1 weekend shift (required 3) — the rule flags EXCESS weekends, not shortfall
     const a1 = makeAssignment({ id: "a1", staffId: "staff-1", date: "2026-02-07" }); // Saturday
     const ctx = makeContext({
       assignments: [a1],
       staffMap: new Map([["staff-1", staff]]),
     });
-    const violations = weekendCountRule.evaluate(ctx);
-    expect(violations).toHaveLength(1);
-    expect(violations[0].ruleId).toBe("weekend-count");
-    expect(violations[0].description).toContain("only 1 weekend");
-    expect(violations[0].penaltyScore).toBe(1.0); // shortfall=2, 2*0.5=1.0
+    expect(weekendCountRule.evaluate(ctx)).toHaveLength(0);
   });
 
   it("passes when staff meets required weekend count (3)", () => {
@@ -365,15 +361,18 @@ describe("weekend-count rule", () => {
     expect(weekendCountRule.evaluate(ctx)).toHaveLength(0);
   });
 
-  it("penalty scales proportionally with shortfall", () => {
+  it("flags each excess weekend shift with flat 0.5 penalty", () => {
     const staff = makeStaff({ id: "staff-1", isActive: true, weekendExempt: false });
-    // 0 weekend shifts → shortfall=3, penalty=1.5
+    // 5 weekend shifts (required 3) → 2 excess → 2 violations, each penaltyScore=0.5
+    const weekendDates = ["2026-02-07", "2026-02-14", "2026-02-21", "2026-02-28", "2026-03-07"];
+    const assignments = weekendDates.map((d, i) => makeAssignment({ id: `a${i}`, staffId: "staff-1", date: d }));
     const ctx = makeContext({
-      assignments: [],
+      assignments,
       staffMap: new Map([["staff-1", staff]]),
     });
     const violations = weekendCountRule.evaluate(ctx);
-    expect(violations[0].penaltyScore).toBe(1.5);
+    expect(violations).toHaveLength(2);
+    expect(violations.every(v => v.penaltyScore === 0.5)).toBe(true);
   });
 });
 

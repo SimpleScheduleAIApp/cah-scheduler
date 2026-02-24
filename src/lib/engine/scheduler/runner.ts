@@ -239,7 +239,12 @@ export async function runGenerationJob(jobId: string, scheduleId: string): Promi
 
     // ── 4. Generate COST variant ──────────────────────────────────────────
     setProgress(jobId, 65, "Building Cost-Optimized schedule");
-    const costResult = generateSchedule(scheduleId, COST_OPTIMIZED, 1000);
+    // Pass BALANCED as greedyWeights: the greedy's job is to build a well-distributed
+    // feasible schedule, and BALANCED does that best. A high OT penalty (3.0) during
+    // greedy depletes low-hour staff early, paradoxically creating more structural OT.
+    // The COST_OPTIMIZED personality (OT: 3.0, preference: 0.5) is then applied fully
+    // in local search and the OT sweep, where it can make targeted improvements.
+    const costResult = generateSchedule(scheduleId, COST_OPTIMIZED, 2000, BALANCED);
     setProgress(jobId, 82, "Scoring Cost-Optimized schedule");
     const costScore = scoreFromDrafts(costResult.assignments, context);
 

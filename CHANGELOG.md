@@ -6,6 +6,231 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.21] - 2026-02-24
+
+### Fixed
+
+- **Called-out nurse now reliably removed from schedule grid when replacement is assigned.**
+
+  `PUT /api/callouts/[id]` (the "Assign" action in the replacement dialog) creates the replacement assignment but previously did not guarantee that the original nurse's assignment was hidden from the grid. The `POST /api/callouts` route already sets `status = "called_out"` when the callout is first logged, but this defensive update in the PUT handler ensures the original assignment is hidden even in leave-based or manual workflows where the POST may not have been called. The schedule grid already filters out `called_out` assignments; this fix closes the gap where the filter had nothing to act on.
+
+### Changed
+
+- **Log Callout dialog: staff name filter replaces flat assignment dropdown.**
+
+  The "Assignment" dropdown previously listed every staff–shift combination across the full schedule period in a single list (98+ entries for a 2-week ICU schedule), making it very difficult to find a specific person's shift. The dialog now has two sequential steps: first select the staff member from an alphabetically sorted list, then select the specific shift from that person's assignments only. The shift dropdown is hidden until a staff member is chosen.
+
+- **Open callouts now have a "Find Replacement" button in the callout history table.**
+
+  Previously, replacement candidates were shown only in the dialog immediately after logging a new callout. Closing that dialog (e.g. to navigate to the schedule grid and check for rest-hour conflicts) made the candidates permanently inaccessible — there was no way to reopen them. Each open callout row now has a "Find Replacement" button that fetches fresh escalation options and reopens the replacement candidates dialog.
+
+  `GET /api/callouts/[id]` was extended to return `escalationOptions` and `chargeNurseRequired` alongside the callout record, enabling this re-fetch without a new POST.
+
+### Files Modified
+
+- `src/app/api/callouts/[id]/route.ts` — GET now returns `escalationOptions` + `chargeNurseRequired`; PUT ensures original assignment status is set to `called_out`
+- `src/app/callouts/page.tsx` — staff filter + shift dropdown in Log dialog; "Find Replacement" button on open rows; `findReplacementForCallout` helper; state reset on dialog close
+
+---
+
+## [1.4.20] - 2026-02-24
+
+### Changed
+
+- **Cost Optimized greedy phase now uses Balanced weights to eliminate structural overtime.**
+
+  After v1.4.19's targeted OT sweep reduced overtime for all variants, Cost Optimized (5 OT) was still producing more overtime than Balanced (3 OT) on the same schedule. The residual gap came from the greedy construction phase: a high OT penalty weight (3.0) caused the greedy to deplete low-hour staff on early, high-priority shifts, leaving high-hour staff for later slots and creating structural overtime patterns that 2-way swaps could not fully resolve post-hoc.
+
+  `generateSchedule` now accepts an optional `greedyWeights` parameter separate from the improvement-phase `weights`. When running Cost Optimized, `BALANCED` is passed as `greedyWeights`: the greedy builds a well-distributed, capacity-aware initial schedule (its actual job), and the variant's cost personality — OT weight 3.0, preference 0.5, agency 5.0 — is then applied fully in local search and the OT sweep, where it can make effective targeted improvements from a better starting point.
+
+  Balanced and Fairness Optimized variants are unaffected; they continue to use their own weights throughout all phases.
+
+### Files Modified
+
+- `src/lib/engine/scheduler/index.ts` — `generateSchedule` gains optional 4th parameter `greedyWeights?: WeightProfile`; greedy phase uses `greedyWeights ?? weights`
+- `src/lib/engine/scheduler/runner.ts` — Cost Optimized call passes `BALANCED` as `greedyWeights`
+
+---
+
+## [1.4.19] - 2026-02-24
+
+### Changed
+
+- **Scheduler now runs a targeted OT-reduction sweep after local search (Phase 4).**
+
+  The Cost Optimized variant was paradoxically producing more overtime violations than the Balanced variant (9 OT vs 6 OT in testing). Root cause: the greedy algorithm processes shifts in constraint-difficulty order (most constrained first), not calendar order. A higher overtime penalty weight (3.0) causes the greedy to deplete low-hour staff on early, constrained shifts, leaving high-hour staff to fill later slots and pushing them into overtime. The subsequent random local search (1000 iterations) had only a ~9% chance per iteration of even targeting an OT assignment, making it unlikely to find and correct these cascading decisions.
+
+  **Phase 4 — `overtimeReductionSweep`** — is now inserted after the existing `recomputeOvertimeFlags` pass. It deterministically iterates over every assignment flagged as overtime, tries swapping it with every other assignment on a different shift, and accepts the first swap that reduces total weighted penalty. This exhausts the 2-assignment-swap neighbourhood for OT assignments (e.g. 9 OT × 89 non-OT = 801 combinations per pass) rather than sampling randomly, and repeats until convergence.
+
+  The sweep uses each variant's own penalty weights as the acceptance criterion, so:
+  - **Cost Optimized** aggressively accepts OT-reducing swaps (OT weight 3.0 makes each elimination worth ~2× the Balanced equivalent)
+  - **Balanced** accepts swaps only where the OT reduction outweighs any soft-rule cost (OT and preference weights are equal at 1.5)
+  - **Fairness Optimized** rarely accepts OT swaps because the weekend equity penalty (3.0) typically overrides the OT gain (0.5) — which is the intended behaviour
+
+  Additionally, Cost Optimized random local search iterations were increased from 1000 to 2000 to give the random phase more chance to escape the greedy local optimum before the targeted sweep runs.
+
+### Files Modified
+
+- `src/lib/engine/scheduler/local-search.ts` — added exported `recomputeOvertimeFlags` (moved from `index.ts`) and new `overtimeReductionSweep` function; added `getWeekStart` to state import
+- `src/lib/engine/scheduler/index.ts` — removed private `recomputeOvertimeFlags` definition; imports `recomputeOvertimeFlags` and `overtimeReductionSweep` from `./local-search`; Phase 4 call added to `generateSchedule`
+- `src/lib/engine/scheduler/runner.ts` — Cost Optimized `localSearchIterations` 1000 → 2000
+
+---
+
+## [1.4.18] - 2026-02-24
+
+### Changed
+
+- **Callout escalation now returns top 3 scored recommendations with reasons.**
+
+  The escalation dialog previously listed every eligible nurse in a flat list sorted only by employment tier (float first, agency last), with competency as a last-resort tiebreaker. A Level 3 float would outrank a Level 5 full-timer even when the called-out nurse was Level 5 — the opposite of what is clinically sensible.
+
+  The function is now score-based, modelled after the coverage-request recommendation engine in `find-candidates.ts`:
+
+  | Signal | Points |
+  |---|---|
+  | Source tier base (float 100 / PRN 80 / OT 60 / Agency 10) | base |
+  | Available on the date | +50 |
+  | Competency ≥ called-out nurse | +20 |
+  | Absolute competency (per level) | +level × 4 |
+  | Reliability rating | +rating × 3 |
+  | Charge nurse qualified (when required) | +15 |
+  | Extra shift within 40 h (no OT cost) | +10 |
+  | Fewer hours scheduled this week | +(40−h) × 0.2 |
+
+  A Level 5 full-timer with 12 h this week now outscores a Level 3 float when the called-out nurse was Level 5. Output is limited to **top 3 eligible** + up to 3 ineligible (shown for awareness).
+
+- **Charge nurse vacancy triggers a hard eligibility requirement.**
+
+  If the called-out nurse was the charge nurse (`assignment.isChargeNurse = true`), any candidate without `isChargeNurseQualified` is marked ineligible. An amber banner appears at the top of the dialog to alert the manager.
+
+- **Each candidate shows human-readable recommendation reasons.**
+
+  The dialog card for each candidate now includes a bullet list: source priority, competency match vs. the called-out nurse, charge qualification (when applicable), hours this week (with an orange OT badge when the shift would exceed 40 h), and reliability rating when ≥ 4/5.
+
+### Files Modified
+
+- `src/lib/callout/escalation.ts` — complete rewrite: score-based ranking; charge nurse hard gate; weekly hours batch query; `reasons`, `score`, `hoursThisWeek` fields on `ReplacementCandidate`; output limited to top 3 eligible + 3 ineligible
+- `src/app/api/callouts/route.ts` — `chargeNurseRequired` computed from original assignment and included in POST response
+- `src/app/callouts/page.tsx` — interface updated; `chargeNurseRequired` state; amber charge banner; per-candidate reason list; hours/OT badge; ineligible divider
+
+---
+
+## [1.4.17] - 2026-02-24
+
+### Fixed
+
+- **Callout escalation candidates now filtered by role compatibility.**
+
+  Previously, `getEscalationOptions()` returned every active staff member regardless of role — CNAs appeared as replacement options for RN positions. The function now applies a role-rank hierarchy (`RN > LPN > CNA`): a candidate must have an equal or higher rank than the nurse who called out. A CNA cannot cover an RN slot; an LPN can cover a CNA slot; an RN can cover any slot.
+
+- **Callout escalation now checks approved leave and adjacent-shift rest.**
+
+  Two additional eligibility gates are now enforced before a candidate is offered as a replacement:
+  1. **Approved leave** — any staff member with an approved leave record covering the shift date is ineligible.
+  2. **Adjacent-shift rest** — the 10-hour rest rule is checked across date boundaries. If a nurse ended an overnight shift (D-1) within 10 hours of the new shift (D), or if the new shift would leave fewer than 10 hours before a next-day assignment (D+1), the candidate is marked ineligible.
+
+  Ineligible candidates are still shown in the dialog (for manager awareness) but are visually distinguished with a red border, a reason label, and a disabled Assign button.
+
+- **Escalation query rewritten to eliminate N+1 loop.**
+
+  The original code fetched all assignments across the entire DB, then re-queried each shift individually inside `.filter()` to match the date — one DB round-trip per assignment. The rewrite issues a single JOIN query for dates D-1/D/D+1, groups results in memory, and performs all checks in one pass.
+
+- **Schedule grid no longer shows called-out nurses.**
+
+  When a nurse called out, their assignment was marked `called_out` but still rendered on the schedule grid because the API returned all assignments. The `GET /api/schedules/[id]` handler now skips assignments with `status = "called_out"` when grouping by shift.
+
+- **Filling a callout now creates a replacement assignment on the grid.**
+
+  The `PUT /api/callouts/[id]` handler only updated the callout record — it never created a new `assignment` row for the replacement nurse, so the schedule grid never updated. The handler now inserts a `callout_replacement` assignment with the correct `scheduleId`, `isFloat`, and `isOvertime` flags. Float determination is based on whether the replacement staff member's `homeUnit` differs from the schedule's unit.
+
+### Files Modified
+
+- `src/lib/callout/escalation.ts` — complete rewrite: role-rank check, leave check, adjacent-day rest check, efficient batch query; `isEligible` and `ineligibilityReasons` fields added to `ReplacementCandidate`
+- `src/app/api/callouts/[id]/route.ts` — `assignment`, `shift`, `schedule`, `staff` imported; replacement assignment inserted in PUT handler
+- `src/app/api/schedules/[id]/route.ts` — `called_out` assignments skipped when building `assignmentsByShift`
+- `src/app/callouts/page.tsx` — `ReplacementCandidate` interface updated with `isEligible` and `ineligibilityReasons`; escalation dialog shows ineligibility reasons; Assign button disabled when ineligible
+
+---
+
+## [1.4.16] - 2026-02-23
+
+### Added
+
+- **Staff Leave tab in Excel export and template.**
+
+  The Excel file downloaded from `/setup` now includes a "Staff Leave" sheet with every existing leave record (all 7 leave types: vacation, sick, maternity, medical, personal, bereavement, other). The blank template also includes this sheet with 7 example rows spanning March–June 2026 — one per leave type — so it is immediately clear what values are accepted.
+
+  Imported leave rows are inserted into `staff_leave` and the scheduler will block those staff from being assigned during their leave period (same as leaves entered through the UI). Staff are matched by First Name + Last Name. If the name does not match an existing staff member the row is skipped silently.
+
+  The "Staff Leave" sheet is fully backwards-compatible: older Excel files without this sheet import without error.
+
+- **"Evening" shift preference removed from Excel and database.**
+
+  The application only defines Day (07:00–19:00) and Night (19:00–07:00) shift templates. Staff who had `preferredShift = "evening"` set — either through an older Excel import or manual entry — would never have their preference matched, because no evening shift exists. This preference value is now removed everywhere.
+
+  At first export after this update, any staff preferences currently set to "evening" in the database are migrated idempotently to alternating "day" / "night" values (sorted by staff ID, even indices → day, odd indices → night). The template and import parser no longer accept "evening" — incoming values fall through to the `"any"` default.
+
+### Files Modified
+
+- `src/db/schema.ts` — `"evening"` removed from the `preferredShift` enum in `staff_preferences`
+- `src/lib/import/parse-excel.ts` — `"evening"` removed from `StaffImport.preferredShift` type and `VALID_PREFERRED_SHIFTS` constant; `LeaveImport` interface added; `leaves` field added to `ImportResult`; `parseLeaves()` function added; `parseExcelFile()` now parses the "Staff Leave" sheet; `generateTemplate()` now includes a "Staff Leave" sheet with 7 sample rows
+- `src/app/api/import/route.ts` — `eq` imported from drizzle-orm; idempotent evening migration runs at the start of `exportCurrentData()`; "Staff Leave" sheet added to `exportCurrentData()`; leave records inserted in `importData()` (step 3c); `leaves` count included in validation preview and success response
+
+---
+
+## [1.4.15] - 2026-02-23
+
+### Fixed
+
+- **Scheduler no longer repeats the same weekend roster every period.**
+
+  The greedy algorithm is fully deterministic — given identical inputs, it always picks the same nurse for a given slot. With no memory of prior schedules, every new schedule started with `weekendCount = 0` for all staff. The weekend scoring bonus/penalty only saw within-period history, so the same nurses (those with the highest reliability rating or competency level) always won the tie-break for weekend shifts period after period.
+
+  The fix: at context-build time, `buildContext()` now queries all weekend assignments in the one prior schedule period (a `schedulePeriodWeeks`-week window before the new schedule's start date) and builds a `historicalWeekendCounts` map. This is passed through `SchedulerContext` to `softPenalty()`, which adds the historical count to the in-schedule count before evaluating the bonus/penalty:
+
+  - A nurse who worked 3 weekends last period (at the required quota) enters the new period with an effective count of 3 = already at quota → penalised for additional weekends → scheduler prefers other nurses.
+  - A nurse who was light on weekends last period enters below quota → gets the full assignment bonus → scheduler prefers them for weekend slots.
+  - New hires and nurses with no historical record start at 0, same as the below-quota case.
+
+  No new database table is required — the existing `assignment` table joined to `shift` has all the data needed. The lookback query runs once per context build and is fast (date-range filter on an indexed column).
+
+### Files Modified
+
+- `src/lib/engine/rules/types.ts` — `historicalWeekendCounts?: Map<string, number>` added to `RuleContext`
+- `src/lib/engine/scheduler/types.ts` — same field added to `SchedulerContext`
+- `src/lib/engine/rule-engine.ts` — `lt` added to drizzle-orm import; lookback query + map construction added to `buildContext()`; field included in return value
+- `src/lib/engine/scheduler/index.ts` — `historicalWeekendCounts` passed through in `buildSchedulerContext()`
+- `src/lib/engine/scheduler/scoring.ts` — 9th parameter `historicalWeekendCounts` (default `new Map()`) added to `softPenalty()`; effective weekend count = historical + current-schedule
+- `src/lib/engine/scheduler/greedy.ts` — both `softPenalty` calls in `pickBest()` pass `context.historicalWeekendCounts ?? new Map()`
+- `src/lib/engine/scheduler/local-search.ts` — `softPenalty` call in `computeTotalPenalty()` passes `context.historicalWeekendCounts ?? new Map()`
+
+---
+
+## [1.4.14] - 2026-02-23
+
+### Changed
+
+- **Overtime and extra-hours violations now display under separate rule names.** Previously both violation types were grouped under the label `"Overtime & Extra Hours"`, which caused two problems: managers could not distinguish a genuine payroll-cost event (>40h at 1.5×) from a scheduling preference issue (above FTE target but still at regular pay), and the violation count shown in the schedule's "By rule" summary conflated these two very different concerns.
+
+  The two cases now emit distinct rule names:
+
+  | Scenario | Rule Name | Why |
+  |----------|-----------|-----|
+  | Nurse's weekly hours exceed 40 | **"Overtime"** | Triggers FLSA 1.5× pay — a direct payroll cost increase. |
+  | Nurse exceeds FTE target but stays ≤ 40h | **"Extra Hours Above FTE"** | Paid at regular rate — a scheduling preference concern, not a cost concern. |
+
+  This change makes the violations panel actionable: an "Overtime" flag means a real cost issue that the Cost-Optimized variant actively penalises; an "Extra Hours Above FTE" flag means a part-time nurse was over-scheduled relative to their contracted hours, which is a fairness and workload concern worth reviewing but carries no payroll premium.
+
+  The scenario scores (Cost %, Fairness %, etc.) are computed from `isOvertime` flags on assignments, not from rule violation counts, so they are unaffected by this rename.
+
+### Files Modified
+
+- `src/lib/engine/rules/overtime-v2.ts` — Case 1 violation `ruleName` changed from `"Overtime & Extra Hours"` → `"Overtime"`, `ruleId` unchanged (`"overtime-v2"`). Case 2 violation `ruleName` changed to `"Extra Hours Above FTE"`, `ruleId` changed to `"extra-hours"`. Description wording updated ("above contracted hours").
+- `RULES_SPECIFICATION.md` — §4.1 rewritten to document the split; inline changelog updated to v1.4.14.
+
+---
+
 ## [1.4.13] - 2026-02-23
 
 ### Fixed

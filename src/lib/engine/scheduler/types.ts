@@ -63,6 +63,9 @@ export interface SchedulerContext {
   unitConfig: UnitConfig | null;
   scheduleUnit: string;
   publicHolidays: PublicHolidayInfo[];
+  /** Weekend shifts worked per staff in the prior schedule period.
+   *  Seeded into scoring so nurses with recent high weekend load are deprioritised. */
+  historicalWeekendCounts?: Map<string, number>;
 }
 
 // Re-export types from rules for convenience

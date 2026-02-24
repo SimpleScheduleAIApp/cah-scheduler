@@ -1,7 +1,7 @@
 # CAH Scheduler - Complete Rules Specification
 
-**Document Version:** 1.4.10
-**Last Updated:** February 22, 2026 (v1.4.10)
+**Document Version:** 1.4.15
+**Last Updated:** February 23, 2026 (v1.4.15)
 **Purpose:** This document describes all scheduling rules and logic implemented in the CAH Scheduler application. Please review and mark any rules that need modification.
 
 ---
@@ -163,24 +163,25 @@ Hard rules are constraints that **cannot be broken**. The scheduler will not cre
 
 Soft rules are **preferences** that the scheduler tries to optimize. Violations incur penalty scores, and the scheduler tries to minimize total penalties. These can be overridden by managers when necessary.
 
-### 4.1 Overtime & Extra Hours *(UPDATED)*
+### 4.1 Overtime *(UPDATED)*
 **Previous Logic (Incorrect):** Any hours over (FTE × 40) counted as overtime; violation was attached staff-level (not to a specific shift)
 
 **Current Logic:**
-| Scenario | Penalty Level | Example |
-|----------|---------------|---------|
-| Hours > 40 in a week | **HIGH** penalty (actual overtime) | A 1.0 FTE nurse working 44 hours = 4 hours OT |
-| Hours > (FTE × 40) but ≤ 40 | **LOW** penalty (extra hours, not OT) | A 0.9 FTE nurse (36 standard hours) working 40 hours = 4 extra hours but NOT overtime |
+| Scenario | Rule Name | Penalty Level | Example |
+|----------|-----------|---------------|---------|
+| Hours > 40 in a week | **"Overtime"** | **HIGH** (cost) | A 1.0 FTE nurse working 44h = 4h OT at 1.5× pay |
+| Hours > (FTE × 40) but ≤ 40 | **"Extra Hours Above FTE"** | **LOW** (preference) | A 0.9 FTE nurse (36h/week) working 40h = 4 extra hours at regular pay |
 
-**Exemption:** Staff with **FTE = 0** (Agency / on-demand) are **fully exempt** from this rule. They have no weekly hours commitment, so no "standard" or "overtime" threshold applies to them.
+**Why two separate rule names?**
+Only hours above 40 trigger FLSA 1.5× overtime pay — a direct payroll cost increase. Hours above the FTE target but still at or below 40h are paid at the regular rate; they are a scheduling preference concern (over-scheduling a part-time nurse), not a cost concern. Keeping them visually separate prevents managers from treating a "Extra Hours Above FTE" flag with the same urgency as a true overtime flag.
 
-**Violation Attribution:** The violation is emitted on the **specific shift that crosses the threshold**, not retroactively on all of that staff member's shifts. Assignments before the threshold are clean; only the triggering shift is flagged. This makes the penalty actionable — swapping or removing that one shift eliminates the violation.
+**Exemption:** Staff with **FTE = 0** (Agency / on-demand) are **fully exempt** from both sub-rules. They have no weekly hours commitment, so no "standard" or "overtime" threshold applies.
 
-**Rationale:** It's better to pay staff extra shift premium than overtime rates or agency rates.
+**Violation Attribution:** Each violation is emitted on the **specific shift that crosses or extends past the threshold**. For actual overtime, only the one shift that first pushes past 40h is flagged (once per week). For extra hours, every shift in the above-FTE zone is flagged with its marginal contribution, so managers can see which assignments are compounding the over-scheduling.
 
 **Penalty Weights:**
-- Actual OT (>40h): Weight = 1.0 (normalized so 12 hours OT = 1.0 penalty)
-- Extra hours (≤40h): Weight = 0.3
+- Actual OT (>40h): Weight = 1.0 (normalized so 12h OT = 1.0 penalty)
+- Extra hours (above FTE, ≤40h): Weight = 0.3
 
 ### 4.2 Weekend Shifts Required *(UPDATED)*
 - **Rule:** Each staff member must work a minimum number of weekend shifts per schedule period
@@ -530,6 +531,9 @@ Please review each section and note any changes needed:
 | 1.4.6 | Feb 22, 2026 | **Agency penalty added (§12.4, §12.5):** New `agency` weight component applies a flat penalty whenever an agency nurse is considered for a slot. Ensures the scheduler exhausts regular, float, and PRN pools before drawing on agency (markup 2–3× base pay). Weights: Balanced 2.5, Fairness-Optimized 1.5, Cost-Optimized 5.0. **PRN Available Days column in Excel (§3.10):** Import template and export now include a "PRN Available Days" column for per_diem staff. Accepted formats: comma-separated day abbreviations (e.g. "Mon, Wed, Fri"), "Weekdays", "Weekends", or "All". Importing this column auto-creates `prn_availability` records spanning the next 12 months — PRN staff are immediately usable in auto-generated schedules without a manual availability submission step. |
 | 1.4.7 | Feb 22, 2026 | **Weekend ICU charge shifts prioritised first in greedy (§12.2):** Weekend charge slots (Sat/Sun) were previously sorted after all weekday charge slots (earliest date first within priority 1). In the FAIR profile — where the low overtime weight allows charge nurses to accumulate hours freely Mon–Fri — this meant weekend slots arrived last with the charge pool already near its 60h rolling limit. Splitting priority 1 into weekend-ICU-charge (new priority 1) and weekday-ICU-charge (priority 2) ensures Sat/Sun charge shifts get first pick of Level 4+ nurses before any weekday shift has consumed their capacity. Applies to all three schedule variants; Balanced and Cost-Optimized are unaffected in practice because their higher overtime penalties already prevent charge-pool depletion. |
 | 1.4.3 | Feb 22, 2026 | **Scheduler penalty re-calibration (§12.4, §12.5):** (1) Balanced variant `overtime` weight raised from 1.0 → 1.5, making actual OT (a real 1.5× payroll cost) consistently more expensive than any single preference violation. (2) Capacity-spreading bonus added to the scoring function: a small incentive (−`overtime_weight × 0.1 × remaining_hours/40`) prefers staff with more remaining hours before the 40h threshold. Acts as a tiebreaker that naturally spreads assignments across the week, reduces temporal depletion of float pool capacity, and decreases unnecessary overtime on regular unit staff. |
+| 1.4.13 | Feb 23, 2026 | **OT badge calendar order (§12.3):** `recomputeOvertimeFlags()` pass added after local search so the `isOvertime` flag reflects calendar order, not greedy construction order. Manual assignment API now computes `isOvertime` server-side (was always `false`). |
+| 1.4.14 | Feb 23, 2026 | **Overtime vs Extra Hours display split (§4.1):** Violations now emitted under two distinct rule names: `"Overtime"` (>40h/week, direct 1.5× payroll cost) and `"Extra Hours Above FTE"` (above FTE target but ≤40h, regular pay rate, scheduling preference concern). Previously both appeared as `"Overtime & Extra Hours"`, which overstated the urgency of extra-hours flags and caused the same count to appear in both cost and preference categories. |
+| 1.4.15 | Feb 23, 2026 | **Cross-schedule weekend fairness (§12.4):** Scheduler now seeds the weekend count from the prior schedule period. At context-build time, `buildContext()` queries all weekend assignments in the one-period lookback window before the new schedule starts and stores per-staff counts as `historicalWeekendCounts`. `softPenalty()` adds these to the in-schedule count before applying the bonus/penalty. Nurses who hit their quota last period start the new period "already at quota" and are deprioritised for weekend slots; nurses who were below quota get the full assignment bonus. Prevents the deterministic greedy algorithm from assigning the same nurses to weekends every period. |
 
 ---
 
@@ -650,7 +654,7 @@ Each component is multiplied by the weight for that component in the active vari
 | **Shift type mismatch** | + `weight × 0.5` | Candidate prefers a different shift type |
 | **Preferred day off** | + `weight × 0.7` | Shift falls on a day the staff prefers off |
 | **Weekend avoidance** | + `weight × 0.6` | Shift is on Sat/Sun and staff has `avoidWeekends = true` |
-| **Weekend incentive** | − `weight × 0.5` | Shift is a weekend shift and staff is below their required weekend count |
+| **Weekend incentive** | − `weight × 0.5` | Shift is a weekend shift and staff is below their required weekend count (historical + current) |
 | **Float — uncross-trained** | + `weight × 1.0` | Assigned outside home unit, not cross-trained there |
 | **Float — cross-trained** | + `weight × 0.3` | Assigned outside home unit, but cross-trained |
 | **Skill mix — all same** | + `weight × 0.6` | All staff on shift (including candidate) would share the same competency level |
@@ -661,6 +665,8 @@ Each component is multiplied by the weight for that component in the active vari
 | **Agency** | + `weight × 1.0` | Candidate is an agency nurse (employment type = `agency`) |
 
 **Capacity bonus rationale:** Mirrors natural charge-nurse behaviour — when two candidates are otherwise equal, the one with more remaining hours this week is asked first. The coefficient (0.1) is intentionally small so it acts as a tiebreaker only and does not override meaningful clinical penalties (skill mix, charge requirement, preferences). Float pool staff — who have no home-unit bias and often have lower accumulated hours when critical ICU shifts are scheduled first — benefit most from this bonus, naturally reducing overtime on regular unit staff later in the schedule.
+
+**Weekend equity — cross-schedule memory:** The weekend count used in the incentive/penalty above is **historical + current**. At context-build time, the system queries weekend assignments from the prior schedule period (one `schedulePeriodWeeks` window before the new schedule starts) and adds those counts to each nurse's running total. This prevents the deterministic greedy algorithm from assigning the same nurses to weekends every period. A nurse who worked 3 weekends last period (at quota) starts the new period effectively "already at quota" and is penalised for more weekends; a nurse who was light on weekends last period starts below quota and gets the assignment bonus. New hires and nurses with no prior history start at 0 and receive the full bonus.
 
 ---
 

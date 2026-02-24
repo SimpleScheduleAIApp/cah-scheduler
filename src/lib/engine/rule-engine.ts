@@ -13,7 +13,7 @@ import {
   publicHoliday,
   schedule,
 } from "@/db/schema";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, gte, lte, lt } from "drizzle-orm";
 import { getEvaluator } from "./rules";
 import type {
   RuleContext,
@@ -235,6 +235,35 @@ export function buildContext(scheduleId: string): RuleContext {
     name: h.name,
   }));
 
+  // Historical weekend counts — look back one schedule period before this schedule starts.
+  // Used by the scheduler's scoring function so nurses who worked many weekends recently
+  // are deprioritised for weekend slots in the new period, preventing the same staff from
+  // always landing on weekends in every successive schedule generation.
+  const historicalWeekendCounts = new Map<string, number>();
+  if (scheduleStartDate) {
+    const lookbackWeeks = unitConfig?.schedulePeriodWeeks ?? 6;
+    const lookbackStart = new Date(scheduleStartDate);
+    lookbackStart.setDate(lookbackStart.getDate() - lookbackWeeks * 7);
+    const lookbackStartStr = lookbackStart.toISOString().slice(0, 10);
+
+    const histRows = db
+      .select({ staffId: assignment.staffId, date: shift.date })
+      .from(assignment)
+      .innerJoin(shift, eq(assignment.shiftId, shift.id))
+      .where(and(gte(shift.date, lookbackStartStr), lt(shift.date, scheduleStartDate)))
+      .all();
+
+    for (const row of histRows) {
+      const day = new Date(row.date).getDay();
+      if (day === 0 || day === 6) {
+        historicalWeekendCounts.set(
+          row.staffId,
+          (historicalWeekendCounts.get(row.staffId) ?? 0) + 1
+        );
+      }
+    }
+  }
+
   return {
     assignments: assignmentInfos,
     staffMap,
@@ -248,6 +277,7 @@ export function buildContext(scheduleId: string): RuleContext {
     scheduleEndDate,
     scheduleUnit,
     ruleParameters: {},
+    historicalWeekendCounts,
   };
 }
 

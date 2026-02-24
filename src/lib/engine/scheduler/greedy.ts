@@ -85,7 +85,8 @@ function pickBest(
       currentShiftAssignments,
       staffMap,
       isChargeCandidate,
-      context.unitConfig
+      context.unitConfig,
+      context.historicalWeekendCounts ?? new Map()
     );
     const bestScore = softPenalty(
       best,
@@ -95,7 +96,8 @@ function pickBest(
       currentShiftAssignments,
       staffMap,
       isChargeCandidate,
-      context.unitConfig
+      context.unitConfig,
+      context.historicalWeekendCounts ?? new Map()
     );
     return score < bestScore ? candidate : best;
   });

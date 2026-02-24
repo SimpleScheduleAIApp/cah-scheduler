@@ -1,6 +1,6 @@
 import type { StaffInfo } from "@/lib/engine/rules/types";
 import type { AssignmentDraft, GenerationResult, SchedulerContext, WeightProfile } from "./types";
-import { SchedulerState } from "./state";
+import { SchedulerState, getWeekStart } from "./state";
 import { passesHardRules, isICUUnit } from "./eligibility";
 import { softPenalty } from "./scoring";
 
@@ -39,7 +39,8 @@ function computeTotalPenalty(
       currentShiftAssignments,
       context.staffMap,
       a.isChargeNurse,
-      context.unitConfig
+      context.unitConfig,
+      context.historicalWeekendCounts ?? new Map()
     );
   }
   return total;
@@ -202,4 +203,103 @@ export function localSearch(
   }
 
   return { assignments, understaffed: result.understaffed };
+}
+
+/**
+ * Recompute isOvertime on every draft in calendar order.
+ *
+ * Defined here (and re-exported from index.ts) so the overtimeReductionSweep
+ * below can call it without a circular import.
+ */
+export function recomputeOvertimeFlags(assignments: AssignmentDraft[]): void {
+  const sorted = [...assignments].sort((a, b) =>
+    a.date !== b.date ? a.date.localeCompare(b.date) : a.startTime.localeCompare(b.startTime)
+  );
+  const weekHours = new Map<string, number>();
+  for (const draft of sorted) {
+    const key = `${draft.staffId}:${getWeekStart(draft.date)}`;
+    const current = weekHours.get(key) ?? 0;
+    draft.isOvertime = current + draft.durationHours > 40;
+    weekHours.set(key, current + draft.durationHours);
+  }
+}
+
+/**
+ * Targeted OT-reduction pass: deterministically tries to swap every overtime
+ * assignment with every other assignment on a different shift. Accepts swaps
+ * that reduce total weighted penalty (using the variant's own weights — so
+ * FAIR won't sacrifice weekend equity to reduce OT, while COST_OPTIMIZED will
+ * aggressively accept OT-reducing swaps even at a small preference cost).
+ *
+ * Exhausts the 2-assignment-swap neighbourhood for OT assignments — far more
+ * targeted than the random swaps in localSearch(). Converges when no improving
+ * swap remains. Runs after localSearch() for all three weight profiles.
+ */
+export function overtimeReductionSweep(
+  initialAssignments: AssignmentDraft[],
+  context: SchedulerContext,
+  weights: WeightProfile
+): AssignmentDraft[] {
+  let assignments = [...initialAssignments];
+  let currentPenalty = computeTotalPenalty(assignments, context, weights);
+  let madeProgress = true;
+
+  while (madeProgress) {
+    madeProgress = false;
+    recomputeOvertimeFlags(assignments); // refresh flags before each pass
+
+    const otIndices = assignments
+      .map((_, i) => i)
+      .filter((i) => assignments[i].isOvertime);
+
+    if (otIndices.length === 0) break;
+
+    outer: for (const otIdx of otIndices) {
+      for (let j = 0; j < assignments.length; j++) {
+        if (j === otIdx) continue;
+        if (assignments[otIdx].shiftId === assignments[j].shiftId) continue;
+        if (!isSwapValid(assignments, otIdx, j, context)) continue;
+
+        const a = assignments[otIdx];
+        const b = assignments[j];
+        const shiftA = context.shifts.find((s) => s.id === a.shiftId)!;
+        const shiftB = context.shifts.find((s) => s.id === b.shiftId)!;
+        const staffA = context.staffMap.get(a.staffId)!;
+        const staffB = context.staffMap.get(b.staffId)!;
+
+        const newA: AssignmentDraft = {
+          ...a,
+          staffId: b.staffId,
+          isFloat: !!(staffB.homeUnit && staffB.homeUnit !== shiftA.unit),
+          floatFromUnit:
+            staffB.homeUnit && staffB.homeUnit !== shiftA.unit
+              ? (staffB.homeUnit ?? null)
+              : null,
+        };
+        const newB: AssignmentDraft = {
+          ...b,
+          staffId: a.staffId,
+          isFloat: !!(staffA.homeUnit && staffA.homeUnit !== shiftB.unit),
+          floatFromUnit:
+            staffA.homeUnit && staffA.homeUnit !== shiftB.unit
+              ? (staffA.homeUnit ?? null)
+              : null,
+        };
+
+        const swapped = [...assignments];
+        swapped[otIdx] = newA;
+        swapped[j] = newB;
+
+        const newPenalty = computeTotalPenalty(swapped, context, weights);
+        if (newPenalty < currentPenalty) {
+          assignments = swapped;
+          currentPenalty = newPenalty;
+          madeProgress = true;
+          break outer; // restart sweep with updated state
+        }
+      }
+    }
+  }
+
+  return assignments;
 }

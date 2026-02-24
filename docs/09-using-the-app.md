@@ -38,7 +38,7 @@ Here's every page in the application and what you can do on each.
 ### The Export → Edit → Import Workflow
 
 ```
-1. Click "Download Data" (exports current Staff, Units, Holidays)
+1. Click "Download Data" (exports current Staff, Units, Holidays, Staff Leave)
         ↓
 2. Edit in Excel (add rows, remove rows, change values)
         ↓
@@ -63,7 +63,7 @@ Here's every page in the application and what you can do on each.
 - Employment Type: full_time, part_time, per_diem, float, agency (required)
 - FTE, Home Unit, Competency Level, Charge Nurse Qualified, etc. (optional)
 - **Staff Preferences** (optional):
-  - Preferred Shift: day, night, evening, or any
+  - Preferred Shift: day, night, or any (evening is not a valid shift type in this application)
   - Preferred Days Off: comma-separated days (e.g., "Saturday, Sunday")
   - Max Consecutive Days: 1-7 (default: 3)
   - Max Hours Per Week: 8-60 (default: 40)
@@ -76,6 +76,15 @@ Here's every page in the application and what you can do on each.
 **Sheet 3: Holidays**
 - Name (required) - e.g., Christmas Day
 - Date (required) - e.g., 2026-12-25
+
+**Sheet 4: Staff Leave** (optional)
+- First Name, Last Name (required — must match a staff member in the Staff sheet)
+- Leave Type (required): vacation, sick, maternity, medical, personal, bereavement, or other
+- Start Date, End Date (required): YYYY-MM-DD format
+- Status (required): pending, approved, or denied
+- Reason (optional): free text
+- Staff on **approved** leave will be blocked from scheduling during that period
+- If a name does not match any imported staff member, that row is skipped silently
 
 ### Common Tasks
 
@@ -181,12 +190,12 @@ When you click any shift in the grid, a dialog opens showing:
   - Badges for Charge, competency level, and **OT** (red) if this nurse's total hours for the week exceed 40h — the badge appears on every overtime shift, not just the first one
   - Hours worked this week *including* this shift — shown in amber if a part-time nurse is above their FTE target
   - FTE target in parentheses for part-time staff (e.g., "28h this week (20h FTE target)")
-  - Preference mismatches in amber — "Prefers evenings", "Prefers Monday off", "Avoids weekends"
+  - Preference mismatches in amber — "Prefers nights", "Prefers Monday off", "Avoids weekends"
 - **Available Staff** — all staff who pass hard scheduling rules for this shift, each showing:
   - Hours already worked this week — helps you pick someone with capacity
   - FTE target for part-time staff (shown in amber if they're already above it)
   - **Would OT** badge (red) — assigning this person would cross 40 h/week
-  - Preference mismatches in amber — "Prefers evenings", "Prefers Monday off", "Avoids weekends"
+  - Preference mismatches in amber — "Prefers nights", "Prefers Monday off", "Avoids weekends"
 - **Unavailable** — staff blocked by a hard rule, with the reason shown (e.g., "insufficient rest", "on approved leave")
 
 If a shift requires a charge nurse, eligible charge nurses (Level 4+) show an **Assign as Charge** button instead of the plain Assign button.
@@ -333,18 +342,23 @@ Candidates are found in this order (escalation ladder):
 | Task | How To |
 |------|--------|
 | Log a new callout | Click "Log Callout" |
-| Find replacement | Use escalation workflow |
-| Mark as filled | Assign replacement staff |
+| Find replacement for an open callout | Click "Find Replacement" on that row |
+| Mark as filled | Assign replacement staff in the escalation dialog |
 | Close without fill | Mark "Unfilled Approved" with justification |
 
 ### Logging a Callout
 
 1. Click "Log Callout"
-2. Select the staff member
-3. Select the shift they're missing
-4. Select the reason (sick, emergency, etc.)
-5. Save
-6. Follow escalation to find replacement
+2. Select the **schedule** the staff member is on
+3. Select the **staff member** from the alphabetically sorted list
+4. Select the **specific shift** from that person's assignments
+5. Select the **reason** (sick, emergency, etc.)
+6. Add optional details, then click **Log Callout**
+7. The replacement candidates dialog opens automatically
+
+### Finding a Replacement for an Existing Callout
+
+If you closed the replacement dialog (for example, to check the schedule grid for rest-hour conflicts), the candidates are not lost. Each open callout row in the history table has a **Find Replacement** button that re-fetches and reopens the escalation dialog with fresh candidates.
 
 ---
 
@@ -558,11 +572,11 @@ Review these checks before approving!
 1. Get the call: "I can't come in"
 2. Go to Callouts page
 3. Click "Log Callout"
-4. Fill in details
-5. Save
-6. Follow escalation suggestions
-7. Assign replacement
-8. Mark as "Filled"
+4. Select schedule → staff member → shift → reason
+5. Click "Log Callout" — replacement candidates appear automatically
+6. Review candidates (source, competency, overtime risk)
+7. Click "Assign" on your choice — status updates to "Filled"
+   (If you close the dialog, click "Find Replacement" on the row to reopen it)
 ```
 
 ### Approving Leave Requests

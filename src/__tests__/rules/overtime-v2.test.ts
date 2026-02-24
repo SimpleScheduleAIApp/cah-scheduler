@@ -71,7 +71,7 @@ describe("overtime-v2 rule", () => {
     });
     const violations = overtimeRulesV2.evaluate(ctx);
     expect(violations).toHaveLength(1);
-    expect(violations[0].description).toContain("within 40h limit");
+    expect(violations[0].description).toContain("above contracted hours");
     // Extra hours = 40 - 36 = 4h. Penalty = (4/12) * 0.3 ≈ 0.1
     expect(violations[0].penaltyScore).toBeCloseTo((4 / 12) * 0.3, 5);
   });
@@ -97,7 +97,7 @@ describe("overtime-v2 rule", () => {
     });
 
     const violations = overtimeRulesV2.evaluate(ctx);
-    const extraHoursViolation = violations.find(v => v.staffId === "staff-a" && v.description.includes("within 40h"));
+    const extraHoursViolation = violations.find(v => v.staffId === "staff-a" && v.description.includes("above contracted hours"));
     const otViolation = violations.find(v => v.staffId === "staff-b" && v.description.includes("actual overtime"));
 
     expect(extraHoursViolation).toBeDefined();

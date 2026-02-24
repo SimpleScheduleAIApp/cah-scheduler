@@ -19,7 +19,7 @@ export interface StaffImport {
   voluntaryFlexAvailable: boolean;
   notes: string | null;
   // Staff preferences
-  preferredShift: "day" | "night" | "evening" | "any";
+  preferredShift: "day" | "night" | "any";
   preferredDaysOff: string[];
   maxConsecutiveDays: number;
   maxHoursPerWeek: number;
@@ -59,6 +59,16 @@ export interface CensusBandImport {
   patientToNurseRatio: string;
 }
 
+export interface LeaveImport {
+  firstName: string;
+  lastName: string;
+  leaveType: "vacation" | "sick" | "maternity" | "medical" | "personal" | "bereavement" | "other";
+  startDate: string;
+  endDate: string;
+  status: "pending" | "approved" | "denied";
+  reason: string | null;
+}
+
 export interface ValidationError {
   sheet: string;
   row: number;
@@ -76,6 +86,7 @@ export interface ImportResult {
   units: UnitImport[];
   holidays: HolidayImport[];
   censusBands: CensusBandImport[];
+  leaves: LeaveImport[];
   errors: ValidationError[];
   warnings: ValidationWarning[];
 }
@@ -83,7 +94,9 @@ export interface ImportResult {
 // Valid enum values
 const VALID_ROLES = ["RN", "LPN", "CNA"];
 const VALID_EMPLOYMENT_TYPES = ["full_time", "part_time", "per_diem", "float", "agency"];
-const VALID_PREFERRED_SHIFTS = ["day", "night", "evening", "any"];
+const VALID_PREFERRED_SHIFTS = ["day", "night", "any"];
+const VALID_LEAVE_TYPES = ["vacation", "sick", "maternity", "medical", "personal", "bereavement", "other"];
+const VALID_LEAVE_STATUSES = ["pending", "approved", "denied"];
 const VALID_DAYS_OF_WEEK = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
 // Helper to parse Yes/No to boolean
@@ -444,6 +457,68 @@ function parseCensusBandsSheet(
   return bands;
 }
 
+// Parse Staff Leave sheet
+function parseLeaves(
+  sheet: XLSX.WorkSheet,
+  errors: ValidationError[],
+  warnings: ValidationWarning[]
+): LeaveImport[] {
+  const data = XLSX.utils.sheet_to_json(sheet, { defval: "" }) as Record<string, unknown>[];
+  const leaves: LeaveImport[] = [];
+
+  data.forEach((row, index) => {
+    const rowNum = index + 2;
+
+    const firstName = String(row["First Name"] ?? row["FirstName"] ?? row["first_name"] ?? "").trim();
+    const lastName = String(row["Last Name"] ?? row["LastName"] ?? row["last_name"] ?? "").trim();
+    const leaveTypeRaw = String(row["Leave Type"] ?? row["LeaveType"] ?? row["leave_type"] ?? "").toLowerCase().trim();
+    const startDateRaw = row["Start Date"] ?? row["StartDate"] ?? row["start_date"];
+    const endDateRaw = row["End Date"] ?? row["EndDate"] ?? row["end_date"];
+    const statusRaw = String(row["Status"] ?? row["status"] ?? "pending").toLowerCase().trim();
+    const reason = String(row["Reason"] ?? row["reason"] ?? "").trim() || null;
+
+    if (!firstName) {
+      errors.push({ sheet: "Staff Leave", row: rowNum, message: "First Name is required" });
+      return;
+    }
+    if (!lastName) {
+      errors.push({ sheet: "Staff Leave", row: rowNum, message: "Last Name is required" });
+      return;
+    }
+    if (!leaveTypeRaw || !VALID_LEAVE_TYPES.includes(leaveTypeRaw)) {
+      errors.push({ sheet: "Staff Leave", row: rowNum, message: `Invalid Leave Type "${leaveTypeRaw}". Must be one of: ${VALID_LEAVE_TYPES.join(", ")}` });
+      return;
+    }
+    if (!startDateRaw) {
+      errors.push({ sheet: "Staff Leave", row: rowNum, message: "Start Date is required" });
+      return;
+    }
+    if (!endDateRaw) {
+      errors.push({ sheet: "Staff Leave", row: rowNum, message: "End Date is required" });
+      return;
+    }
+
+    const status: LeaveImport["status"] = VALID_LEAVE_STATUSES.includes(statusRaw)
+      ? (statusRaw as LeaveImport["status"])
+      : "pending";
+    if (!VALID_LEAVE_STATUSES.includes(statusRaw)) {
+      warnings.push({ sheet: "Staff Leave", row: rowNum, message: `Unknown status "${statusRaw}", defaulting to "pending"` });
+    }
+
+    leaves.push({
+      firstName,
+      lastName,
+      leaveType: leaveTypeRaw as LeaveImport["leaveType"],
+      startDate: formatDate(startDateRaw),
+      endDate: formatDate(endDateRaw),
+      status,
+      reason,
+    });
+  });
+
+  return leaves;
+}
+
 // Main parse function
 export function parseExcelFile(buffer: ArrayBuffer): ImportResult {
   const errors: ValidationError[] = [];
@@ -460,12 +535,14 @@ export function parseExcelFile(buffer: ArrayBuffer): ImportResult {
   const unitsSheetName = sheetNames.find((n) => n.toLowerCase() === "units");
   const holidaysSheetName = sheetNames.find((n) => n.toLowerCase() === "holidays");
   const censusBandsSheetName = sheetNames.find((n) => n.toLowerCase() === "census bands" || n.toLowerCase() === "censusbands");
+  const leavesSheetName = sheetNames.find((n) => n.toLowerCase() === "staff leave" || n.toLowerCase() === "staffleave" || n.toLowerCase() === "leaves");
 
   // Parse each sheet
   let staff: StaffImport[] = [];
   let units: UnitImport[] = [];
   let holidays: HolidayImport[] = [];
   let censusBands: CensusBandImport[] = [];
+  let leaves: LeaveImport[] = [];
 
   if (staffSheetName) {
     staff = parseStaffSheet(workbook.Sheets[staffSheetName], errors, warnings);
@@ -490,11 +567,17 @@ export function parseExcelFile(buffer: ArrayBuffer): ImportResult {
   }
   // Census bands are optional - if not provided, defaults will be created
 
+  // Staff Leave sheet is optional - silently skip if not present (backwards compatible)
+  if (leavesSheetName) {
+    leaves = parseLeaves(workbook.Sheets[leavesSheetName], errors, warnings);
+  }
+
   return {
     staff,
     units,
     holidays,
     censusBands,
+    leaves,
     errors,
     warnings,
   };
@@ -610,6 +693,28 @@ export function generateTemplate(): ArrayBuffer {
   ];
   const holidaysSheet = XLSX.utils.aoa_to_sheet([holidaysHeaders, ...holidaysExamples]);
   XLSX.utils.book_append_sheet(workbook, holidaysSheet, "Holidays");
+
+  // Staff Leave sheet — 7 sample rows, one per leave type, spanning March–June 2026
+  const staffLeaveHeaders = [
+    "First Name",
+    "Last Name",
+    "Leave Type",
+    "Start Date",
+    "End Date",
+    "Status",
+    "Reason",
+  ];
+  const staffLeaveExamples = [
+    ["Maria",    "Garcia",   "vacation",    "2026-03-09", "2026-03-13", "approved", "Spring break"],
+    ["Patricia", "Clark",    "sick",        "2026-03-23", "2026-03-24", "approved", "Flu"],
+    ["Sarah",    "Johnson",  "maternity",   "2026-04-01", "2026-06-30", "approved", "Maternity leave"],
+    ["Michael",  "Brown",    "medical",     "2026-04-20", "2026-04-24", "pending",  "Scheduled procedure"],
+    ["Jennifer", "Davis",    "personal",    "2026-05-04", "2026-05-04", "pending",  "Family event"],
+    ["Robert",   "Wilson",   "bereavement", "2026-05-18", "2026-05-20", "approved", "Bereavement"],
+    ["Lisa",     "Martinez", "other",       "2026-06-08", "2026-06-09", "pending",  "Other reason"],
+  ];
+  const staffLeaveSheet = XLSX.utils.aoa_to_sheet([staffLeaveHeaders, ...staffLeaveExamples]);
+  XLSX.utils.book_append_sheet(workbook, staffLeaveSheet, "Staff Leave");
 
   // Generate buffer
   const buffer = XLSX.write(workbook, { type: "array", bookType: "xlsx" });

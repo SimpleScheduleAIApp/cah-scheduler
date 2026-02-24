@@ -60,11 +60,19 @@ export async function POST(request: Request) {
     newState: newCallout as unknown as Record<string, unknown>,
   });
 
-  // Get escalation options
+  // Was the called-out assignment a charge nurse slot?
+  const origAssignment = db
+    .select({ isChargeNurse: assignment.isChargeNurse })
+    .from(assignment)
+    .where(eq(assignment.id, body.assignmentId))
+    .get();
+  const chargeNurseRequired = origAssignment?.isChargeNurse === true;
+
+  // Get escalation options (competency-ranked, top 3 + up to 3 ineligible)
   const options = getEscalationOptions(body.shiftId, body.staffId);
 
   return NextResponse.json(
-    { callout: newCallout, escalationOptions: options },
+    { callout: newCallout, escalationOptions: options, chargeNurseRequired },
     { status: 201 }
   );
 }

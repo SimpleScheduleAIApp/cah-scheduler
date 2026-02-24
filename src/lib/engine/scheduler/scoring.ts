@@ -19,7 +19,8 @@ export function softPenalty(
   currentShiftAssignments: AssignmentDraft[],
   staffMap: Map<string, StaffInfo>,
   isChargeCandidate: boolean,
-  unitConfig: UnitConfig | null
+  unitConfig: UnitConfig | null,
+  historicalWeekendCounts: Map<string, number> = new Map()
 ): number {
   let penalty = 0;
 
@@ -72,10 +73,17 @@ export function softPenalty(
   // Incentivise staff who haven't reached their required weekend count (bonus).
   // Penalise assigning MORE weekends to staff who already met or exceeded quota so
   // that the Fair variant actually produces lower weekend variance than Balanced/Cost.
+  //
+  // historicalWeekendCounts seeds the count with weekends worked in the prior
+  // schedule period so the same nurses don't always land on weekends every run.
+  // A nurse who hit their quota last period starts this period already "at quota"
+  // and is penalised for more weekends, while a nurse who was light last period
+  // starts below quota and gets the assignment bonus.
   const dayOfWeek = new Date(shiftInfo.date).getDay();
   const isWeekendShift = dayOfWeek === 0 || dayOfWeek === 6;
   if (isWeekendShift && !staffInfo.weekendExempt) {
-    const weekendCount = state.getWeekendCount(staffInfo.id);
+    const historicalWeekends = historicalWeekendCounts.get(staffInfo.id) ?? 0;
+    const weekendCount = historicalWeekends + state.getWeekendCount(staffInfo.id);
     const required = unitConfig?.weekendShiftsRequired ?? 3;
     if (weekendCount < required) {
       // Below quota: give a bonus so the algorithm fills required weekends first

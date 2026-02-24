@@ -167,7 +167,7 @@ export const staffPreferences = sqliteTable(
       .notNull()
       .references(() => staff.id, { onDelete: "cascade" }),
     preferredShift: text("preferred_shift", {
-      enum: ["day", "night", "evening", "any"],
+      enum: ["day", "night", "any"],
     }).default("any"),
     maxHoursPerWeek: integer("max_hours_per_week").default(40),
     maxConsecutiveDays: integer("max_consecutive_days").default(3),

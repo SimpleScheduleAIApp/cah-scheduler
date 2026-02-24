@@ -87,7 +87,7 @@ export const overtimeRulesV2: RuleEvaluator = {
 
             violations.push({
               ruleId: "overtime-v2",
-              ruleName: "Overtime & Extra Hours",
+              ruleName: "Overtime",
               ruleType: "soft",
               shiftId: a.shiftId,
               staffId,
@@ -109,12 +109,12 @@ export const overtimeRulesV2: RuleEvaluator = {
             const penaltyScore = (shiftExtraHours / 12) * extraHoursPenaltyWeight;
 
             violations.push({
-              ruleId: "overtime-v2",
-              ruleName: "Overtime & Extra Hours",
+              ruleId: "extra-hours",
+              ruleName: "Extra Hours Above FTE",
               ruleType: "soft",
               shiftId: a.shiftId,
               staffId,
-              description: `${staffName} (${staffInfo.fte} FTE, ${standardHours}h/week) reaches ${cumulativeHours.toFixed(1)}h in week of ${weekStart} — this shift adds ${shiftExtraHours.toFixed(1)}h above standard hours`,
+              description: `${staffName} (${staffInfo.fte} FTE, ${standardHours}h/week) reaches ${cumulativeHours.toFixed(1)}h in week of ${weekStart} — this shift adds ${shiftExtraHours.toFixed(1)}h above contracted hours`,
               penaltyScore,
             });
           }
