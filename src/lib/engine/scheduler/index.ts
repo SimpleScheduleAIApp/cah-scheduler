@@ -2,7 +2,7 @@ import { buildContext } from "@/lib/engine/rule-engine";
 import type { AssignmentDraft, GenerationResult, SchedulerContext, WeightProfile } from "./types";
 import { greedyConstruct } from "./greedy";
 import { repairHardViolations } from "./repair";
-import { localSearch, recomputeOvertimeFlags, overtimeReductionSweep } from "./local-search";
+import { localSearch, recomputeOvertimeFlags, overtimeReductionSweep, weekendRedistributionSweep } from "./local-search";
 
 /**
  * Build a SchedulerContext from a schedule ID using the existing rule-engine
@@ -79,8 +79,17 @@ export function generateSchedule(
   // the 2-assignment-swap neighbourhood for OT assignments (OT_count × n
   // combinations per pass) rather than sampling randomly. FAIR won't sacrifice
   // weekend equity because computeTotalPenalty uses the variant's own weights.
-  const finalAssignments = overtimeReductionSweep(improved.assignments, context, weights);
-  recomputeOvertimeFlags(finalAssignments); // refresh flags after sweep
+  const afterOTSweep = overtimeReductionSweep(improved.assignments, context, weights);
+  recomputeOvertimeFlags(afterOTSweep); // refresh flags after sweep
+
+  // Phase 5: Targeted weekend-redistribution sweep.
+  // Deterministically tries to move weekend assignments from staff with above-
+  // average weekend counts to staff with below-average counts. FAIR aggressively
+  // accepts these swaps (weekend equity weight 3.0); BALANCED accepts only when
+  // the equity improvement outweighs other soft costs; COST_OPTIMIZED skips
+  // swaps that would increase overtime cost.
+  const finalAssignments = weekendRedistributionSweep(afterOTSweep, context, weights);
+  recomputeOvertimeFlags(finalAssignments); // refresh OT flags after potential staff moves
 
   return { assignments: finalAssignments, understaffed: improved.understaffed };
 }

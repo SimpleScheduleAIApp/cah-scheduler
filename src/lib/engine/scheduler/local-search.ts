@@ -303,3 +303,112 @@ export function overtimeReductionSweep(
 
   return assignments;
 }
+
+/**
+ * Targeted weekend-redistribution pass: tries to swap weekend assignments from
+ * staff with above-average weekend counts to staff with below-average counts.
+ *
+ * The swap is only accepted when it reduces total weighted penalty, so FAIR
+ * (weekend equity weight 3.0) will aggressively redistribute while BALANCED
+ * accepts only when the improvement outweighs other costs, and COST_OPTIMIZED
+ * will skip swaps that would increase overtime cost.
+ *
+ * Deterministically exhausts the excess-weekend × deficit-staff pairing space
+ * rather than sampling randomly. Converges when no improving swap exists.
+ */
+export function weekendRedistributionSweep(
+  initialAssignments: AssignmentDraft[],
+  context: SchedulerContext,
+  weights: WeightProfile
+): AssignmentDraft[] {
+  let assignments = [...initialAssignments];
+  let currentPenalty = computeTotalPenalty(assignments, context, weights);
+  let madeProgress = true;
+
+  while (madeProgress) {
+    madeProgress = false;
+
+    // Compute weekend-shift count per staff (include staff with 0 weekend shifts)
+    const weekendCounts = new Map<string, number>();
+    for (const id of new Set(assignments.map((a) => a.staffId))) {
+      weekendCounts.set(id, 0);
+    }
+    for (const a of assignments) {
+      const day = new Date(a.date + "T00:00:00Z").getUTCDay();
+      if (day === 0 || day === 6) {
+        weekendCounts.set(a.staffId, (weekendCounts.get(a.staffId) ?? 0) + 1);
+      }
+    }
+
+    const counts = [...weekendCounts.values()];
+    if (counts.length < 2) break;
+    const mean = counts.reduce((a, b) => a + b, 0) / counts.length;
+
+    // Staff with fewer-than-average weekend assignments (targets for receiving weekends)
+    const deficitStaffIds = new Set(
+      [...weekendCounts.entries()]
+        .filter(([, c]) => c < mean)
+        .map(([id]) => id)
+    );
+
+    // Indices of weekend assignments held by staff with above-average weekend count
+    const excessIndices = assignments
+      .map((a, i) => ({ a, i }))
+      .filter(({ a }) => {
+        const day = new Date(a.date + "T00:00:00Z").getUTCDay();
+        return (day === 0 || day === 6) && (weekendCounts.get(a.staffId) ?? 0) > mean;
+      })
+      .map(({ i }) => i);
+
+    if (excessIndices.length === 0) break;
+
+    outer: for (const exIdx of excessIndices) {
+      for (let j = 0; j < assignments.length; j++) {
+        if (j === exIdx) continue;
+        if (assignments[exIdx].shiftId === assignments[j].shiftId) continue;
+        if (!deficitStaffIds.has(assignments[j].staffId)) continue;
+        if (!isSwapValid(assignments, exIdx, j, context)) continue;
+
+        const a = assignments[exIdx];
+        const b = assignments[j];
+        const shiftA = context.shifts.find((s) => s.id === a.shiftId)!;
+        const shiftB = context.shifts.find((s) => s.id === b.shiftId)!;
+        const staffA = context.staffMap.get(a.staffId)!;
+        const staffB = context.staffMap.get(b.staffId)!;
+
+        const newA: AssignmentDraft = {
+          ...a,
+          staffId: b.staffId,
+          isFloat: !!(staffB.homeUnit && staffB.homeUnit !== shiftA.unit),
+          floatFromUnit:
+            staffB.homeUnit && staffB.homeUnit !== shiftA.unit
+              ? (staffB.homeUnit ?? null)
+              : null,
+        };
+        const newB: AssignmentDraft = {
+          ...b,
+          staffId: a.staffId,
+          isFloat: !!(staffA.homeUnit && staffA.homeUnit !== shiftB.unit),
+          floatFromUnit:
+            staffA.homeUnit && staffA.homeUnit !== shiftB.unit
+              ? (staffA.homeUnit ?? null)
+              : null,
+        };
+
+        const swapped = [...assignments];
+        swapped[exIdx] = newA;
+        swapped[j] = newB;
+
+        const newPenalty = computeTotalPenalty(swapped, context, weights);
+        if (newPenalty < currentPenalty) {
+          assignments = swapped;
+          currentPenalty = newPenalty;
+          madeProgress = true;
+          break outer; // restart sweep with updated counts
+        }
+      }
+    }
+  }
+
+  return assignments;
+}

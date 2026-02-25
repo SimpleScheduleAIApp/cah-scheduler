@@ -356,11 +356,23 @@ async function checkStaffAvailability(
     )
     .all();
 
-  // Check for overlapping shifts
+  // Check for overlapping shifts and insufficient same-day rest
   for (const existing of existingAssignments) {
-    // Simple overlap check - if same date, check time overlap
     if (shiftsOverlap(existing.startTime, existing.endTime, shiftDetails.startTime, shiftDetails.endTime)) {
       return { available: false, hoursThisWeek: 0, reason: "Already assigned to overlapping shift" };
+    }
+    // Non-overlapping same-day shifts still need ≥10 hours gap
+    // e.g. Day 07:00–19:00 followed by Night 19:00–07:00 = 0 hours rest
+    const gapMins = sameDayShiftGapMinutes(
+      existing.startTime, existing.endTime,
+      shiftDetails.startTime, shiftDetails.endTime
+    );
+    if (gapMins < 10 * 60) {
+      return {
+        available: false,
+        hoursThisWeek: 0,
+        reason: `Insufficient rest between same-day shifts (${Math.round(gapMins / 60)}h gap)`,
+      };
     }
   }
 
@@ -451,4 +463,30 @@ function shiftsOverlap(
 
   // Check overlap
   return s1 < e2 && s2 < e1;
+}
+
+/**
+ * Returns the minimum forward time gap (in minutes) between two same-day
+ * non-overlapping shifts.  Both directions are checked and the smaller
+ * positive gap is returned.
+ *
+ * Example: Day 07:00–19:00 then Night 19:00–07:00 → gap = 0 min.
+ */
+function sameDayShiftGapMinutes(
+  start1: string, end1: string,
+  start2: string, end2: string
+): number {
+  const toMins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
+  const s1 = toMins(start1);
+  let e1 = toMins(end1);
+  const s2 = toMins(start2);
+  let e2 = toMins(end2);
+  if (e1 < s1) e1 += 24 * 60; // normalize overnight
+  if (e2 < s2) e2 += 24 * 60;
+  // Gap A: shift1 ends then shift2 starts
+  const gapA = s2 - e1;
+  // Gap B: shift2 ends then shift1 starts
+  const gapB = s1 - e2;
+  const pos = [gapA, gapB].filter((g) => g >= 0);
+  return pos.length > 0 ? Math.min(...pos) : Infinity;
 }

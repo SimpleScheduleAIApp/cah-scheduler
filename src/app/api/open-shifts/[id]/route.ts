@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { openShift, assignment, shift, exceptionLog } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -97,6 +97,19 @@ export async function PUT(
       .returning()
       .get();
 
+    // Hide the original nurse's assignment from the schedule grid
+    if (existing.originalStaffId) {
+      db.update(assignment)
+        .set({ status: "called_out", updatedAt: new Date().toISOString() })
+        .where(
+          and(
+            eq(assignment.staffId, existing.originalStaffId),
+            eq(assignment.shiftId, existing.shiftId)
+          )
+        )
+        .run();
+    }
+
     // Update coverage request as filled
     const updated = db
       .update(openShift)
@@ -152,6 +165,19 @@ export async function PUT(
       })
       .returning()
       .get();
+
+    // Hide the original nurse's assignment from the schedule grid
+    if (existing.originalStaffId) {
+      db.update(assignment)
+        .set({ status: "called_out", updatedAt: new Date().toISOString() })
+        .where(
+          and(
+            eq(assignment.staffId, existing.originalStaffId),
+            eq(assignment.shiftId, existing.shiftId)
+          )
+        )
+        .run();
+    }
 
     // Update coverage request as filled
     const updated = db

@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.24] - 2026-02-25
+
+### Fixed
+
+- **Coverage recommendations no longer suggest staff with zero rest hours between same-day shifts.**
+
+  `findCandidatesForShift` in `src/lib/coverage/find-candidates.ts` checked for overlapping shifts on the same date, but a Day shift (07:00–19:00) and a Night shift (19:00–07:00) on the same date share a boundary minute and do not technically overlap. The ≥10-hour rest check only looked at D-1 assignments (overnight shifts ending on the shift's date), so a staff member finishing a Day shift at 19:00 was incorrectly listed as available for the Night shift starting at 19:00. Added `sameDayShiftGapMinutes` helper and a post-overlap rest check that catches adjacent same-day shifts with insufficient gaps.
+
+- **Original nurse now removed from schedule grid when a coverage request is filled.**
+
+  `PUT /api/open-shifts/[id]` (both the `approve` and legacy `fill` actions) created the replacement assignment but never marked the original nurse's assignment as `called_out`. The schedule grid's existing filter already excludes `called_out` assignments; this fix ensures the `open-shifts` approval path sets that status the same way the callout path does.
+
+### Changed
+
+- **Scheduler now runs a targeted weekend-redistribution sweep after the OT sweep (Phase 5).**
+
+  The Fairness Optimized variant was only marginally better than Balanced on fairness (74% vs 69%) despite having a 3× higher weekend equity weight. Root cause: the greedy processes shifts in constraint-difficulty order, not in "spread weekends evenly" order. By the time weekend slots are assigned, staff are already partially committed to constrained weekday ICU slots, leaving fewer degrees of freedom. The random local search rarely targets weekend-heavy staff specifically.
+
+  **Phase 5 — `weekendRedistributionSweep`** — is inserted after the OT sweep. It deterministically iterates over weekend assignments held by staff with above-average weekend counts and tries swapping each with an assignment from a staff member with below-average weekend counts. Accepts the first swap that reduces total weighted penalty and restarts, converging when no improving swap exists. Uses each variant's own weights as the acceptance criterion:
+  - **Fairness Optimized** aggressively redistributes (weekend equity weight 3.0)
+  - **Balanced** accepts redistribution swaps only when they reduce overall penalty
+  - **Cost Optimized** skips swaps that would increase overtime cost
+
+### Files Modified
+
+- `src/lib/coverage/find-candidates.ts` — added `sameDayShiftGapMinutes` helper; same-day adjacent-shift rest check added after overlap check
+- `src/app/api/open-shifts/[id]/route.ts` — `approve` and `fill` actions now set original assignment to `called_out`; added `and` to drizzle import
+- `src/lib/engine/scheduler/local-search.ts` — new exported `weekendRedistributionSweep` function
+- `src/lib/engine/scheduler/index.ts` — imports `weekendRedistributionSweep`; Phase 5 call after OT sweep
+
+---
+
 ## [1.4.21] - 2026-02-24
 
 ### Fixed

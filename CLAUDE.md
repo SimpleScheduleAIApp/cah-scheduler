@@ -8,7 +8,7 @@ This file provides context and conventions for Claude Code when working in this 
 
 **CAH Scheduler** is a nurse scheduling application for Critical Access Hospitals (small rural hospitals, ≤25 beds). It automates complex staff scheduling while enforcing hard rules (safety/legal) and soft rules (fairness/preferences).
 
-- **Current version:** 1.4.21
+- **Current version:** 1.4.24
 - **GitHub:** https://github.com/GrowthToDo/cah-scheduler
 - **Local path:** D:\Pradeep\Personal\Projects\Nurse-scheduling
 
