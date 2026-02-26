@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.29] - 2026-02-26
+
+### Changed
+
+- **Local search upgraded from hill climbing to Late Acceptance metaheuristic.**
+
+  The previous local search accepted a swap only when it strictly reduced the total penalty (steepest-descent hill climbing). Hill climbing gets permanently stuck once no immediate improvement exists, even if a short sequence of neutral or slightly-worse moves would lead to a much better solution. Replaced with Late Acceptance (Burke &amp; Bykov, 2012): a move is accepted if it scores no worse than the solution 200 iterations ago. This lets the search cross shallow local optima and score plateaus while remaining deterministic and parameter-free (no cooling schedule to tune). The best solution seen during the run is tracked separately and returned.
+
+- **Local search is now reproducible via a seed.**
+
+  The local search previously called `Math.random()` directly. Replaced with a seeded `mulberry32` PRNG. `runner.ts` generates one base seed per generation job, derives three independent variant seeds from it, and records both in the audit log (`exception_log.newState`). `generateSchedule` falls back to a time-based seed when called without one, so the API is backwards compatible.
+
+### Files Modified
+
+- `src/lib/engine/scheduler/local-search.ts` — `mulberry32` PRNG, Late Acceptance, seed parameter, bestAssignments tracking
+- `src/lib/engine/scheduler/index.ts` — `generateSchedule` accepts optional seed, passes to `localSearch`
+- `src/lib/engine/scheduler/runner.ts` — generates baseSeed + 3 variant seeds, records in audit log
+
+---
+
 ## [1.4.28] - 2026-02-26
 
 ### Fixed

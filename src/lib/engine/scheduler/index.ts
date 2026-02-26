@@ -2,7 +2,7 @@ import { buildContext } from "@/lib/engine/rule-engine";
 import type { AssignmentDraft, GenerationResult, SchedulerContext, WeightProfile } from "./types";
 import { greedyConstruct } from "./greedy";
 import { repairHardViolations } from "./repair";
-import { localSearch, recomputeOvertimeFlags, overtimeReductionSweep, weekendRedistributionSweep } from "./local-search";
+import { localSearch, mulberry32, recomputeOvertimeFlags, overtimeReductionSweep, weekendRedistributionSweep } from "./local-search";
 
 /**
  * Build a SchedulerContext from a schedule ID using the existing rule-engine
@@ -44,13 +44,23 @@ export function buildSchedulerContext(scheduleId: string): SchedulerContext {
  *                             paradoxically creates more structural OT. The variant's
  *                             cost-focused personality is then applied fully in the
  *                             local search and OT sweep phases.
+ * @param seed                 32-bit integer seed for the local search PRNG.
+ *                             The same seed + same weights always produces the same
+ *                             schedule. Defaults to a time-based value when omitted;
+ *                             pass an explicit seed from the runner to record it in
+ *                             the audit log and enable later reproduction.
  */
 export function generateSchedule(
   scheduleId: string,
   weights: WeightProfile,
   localSearchIterations = 500,
-  greedyWeights?: WeightProfile
+  greedyWeights?: WeightProfile,
+  seed?: number
 ): GenerationResult {
+  // Generate a seed if not provided (time-based — not reproducible, but fine for
+  // ad-hoc use; runner.ts always passes an explicit seed that it records).
+  const resolvedSeed = seed ?? (Date.now() & 0x7fffffff);
+
   const context = buildSchedulerContext(scheduleId);
 
   // Phase 1: Greedy construction
@@ -64,8 +74,8 @@ export function generateSchedule(
   // then back-filling the vacated slots with generalist nurses.
   const repaired = repairHardViolations(greedy, context);
 
-  // Phase 2: Local search improvement
-  const improved = localSearch(repaired, context, weights, localSearchIterations);
+  // Phase 2: Local search improvement (Late Acceptance metaheuristic)
+  const improved = localSearch(repaired, context, weights, localSearchIterations, resolvedSeed);
 
   // Phase 3 (display fix): Recompute isOvertime in calendar order.
   // Construction uses most-constrained-first ordering, so weekend shifts are

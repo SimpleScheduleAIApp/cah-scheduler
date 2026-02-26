@@ -9,6 +9,7 @@ import {
 } from "@/db/schema";
 import { eq, and } from "drizzle-orm";
 import { generateSchedule, buildSchedulerContext, BALANCED, FAIR, COST_OPTIMIZED } from "./index";
+import { mulberry32 } from "./local-search";
 import { evaluateSchedule } from "@/lib/engine/rule-engine";
 import type { AssignmentDraft, UnderstaffedShift, SchedulerContext } from "./types";
 
@@ -205,7 +206,16 @@ export async function runGenerationJob(jobId: string, scheduleId: string): Promi
 
     setProgress(jobId, 5, "Preparing schedule context");
 
-    // ── 0. Build context once (shared across all 3 variants) ──────────────
+    // ── 0. Seed generation ────────────────────────────────────────────────
+    // One base seed per job; three variant seeds derived from it.
+    // Record baseSeed in the audit log — sufficient to reproduce all 3 variants.
+    const baseSeed = Date.now() & 0x7fffffff;
+    const seedGen = mulberry32(baseSeed);
+    const balancedSeed = Math.floor(seedGen() * 0x7fffffff);
+    const fairSeed    = Math.floor(seedGen() * 0x7fffffff);
+    const costSeed    = Math.floor(seedGen() * 0x7fffffff);
+
+    // ── 1. Build context once (shared across all 3 variants) ──────────────
     const context = buildSchedulerContext(scheduleId);
 
     // ── 1. Clear existing assignments ─────────────────────────────────────
@@ -215,7 +225,7 @@ export async function runGenerationJob(jobId: string, scheduleId: string): Promi
 
     // ── 2. Generate BALANCED variant ──────────────────────────────────────
     setProgress(jobId, 10, "Building Balanced schedule");
-    const balancedResult = generateSchedule(scheduleId, BALANCED, 1500);
+    const balancedResult = generateSchedule(scheduleId, BALANCED, 1500, undefined, balancedSeed);
 
     setProgress(jobId, 38, "Writing Balanced schedule to database");
     writeAssignments(balancedResult.assignments, scheduleId, context);
@@ -233,7 +243,7 @@ export async function runGenerationJob(jobId: string, scheduleId: string): Promi
 
     // ── 3. Generate FAIR variant ──────────────────────────────────────────
     setProgress(jobId, 45, "Building Fairness-Optimized schedule");
-    const fairResult = generateSchedule(scheduleId, FAIR, 1500);
+    const fairResult = generateSchedule(scheduleId, FAIR, 1500, undefined, fairSeed);
     setProgress(jobId, 62, "Scoring Fairness-Optimized schedule");
     const fairScore = scoreFromDrafts(fairResult.assignments, context);
 
@@ -244,7 +254,7 @@ export async function runGenerationJob(jobId: string, scheduleId: string): Promi
     // greedy depletes low-hour staff early, paradoxically creating more structural OT.
     // The COST_OPTIMIZED personality (OT: 3.0, preference: 0.5) is then applied fully
     // in local search and the OT sweep, where it can make targeted improvements.
-    const costResult = generateSchedule(scheduleId, COST_OPTIMIZED, 2000, BALANCED);
+    const costResult = generateSchedule(scheduleId, COST_OPTIMIZED, 2000, BALANCED, costSeed);
     setProgress(jobId, 82, "Scoring Cost-Optimized schedule");
     const costScore = scoreFromDrafts(costResult.assignments, context);
 
@@ -346,6 +356,8 @@ export async function runGenerationJob(jobId: string, scheduleId: string): Promi
           assignmentCount: balancedResult.assignments.length,
           understaffedCount: balancedResult.understaffed.length,
           scores: balancedScore,
+          baseSeed,
+          seed: balancedSeed,
         },
         performedBy: "system",
         createdAt: now,
@@ -363,6 +375,8 @@ export async function runGenerationJob(jobId: string, scheduleId: string): Promi
           assignmentCount: fairResult.assignments.length,
           understaffedCount: fairResult.understaffed.length,
           scores: fairScore,
+          baseSeed,
+          seed: fairSeed,
         },
         performedBy: "system",
         createdAt: now,
@@ -380,6 +394,8 @@ export async function runGenerationJob(jobId: string, scheduleId: string): Promi
           assignmentCount: costResult.assignments.length,
           understaffedCount: costResult.understaffed.length,
           scores: costScore,
+          baseSeed,
+          seed: costSeed,
         },
         performedBy: "system",
         createdAt: now,

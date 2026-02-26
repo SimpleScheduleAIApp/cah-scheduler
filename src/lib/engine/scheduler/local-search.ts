@@ -4,6 +4,36 @@ import { SchedulerState, getWeekStart } from "./state";
 import { passesHardRules, isICUUnit } from "./eligibility";
 import { softPenalty } from "./scoring";
 
+// ---------------------------------------------------------------------------
+// Seeded PRNG — mulberry32
+//
+// A minimal, fast, zero-dependency 32-bit PRNG. Produces the same sequence
+// for the same seed, giving fully reproducible schedules. Used instead of
+// Math.random() throughout the local search so the base seed recorded in the
+// audit log is sufficient to reproduce any generated schedule.
+//
+// Reference: https://gist.github.com/tommyettinger/46a874533244883189143505d203312c
+// ---------------------------------------------------------------------------
+export function mulberry32(seed: number): () => number {
+  let s = seed | 0;
+  return function () {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Late Acceptance buffer size (K)
+//
+// The LA algorithm accepts a candidate if it scores no worse than the solution
+// K iterations ago. K=200 gives a look-back window large enough to escape
+// shallow local optima without inflating the acceptance rate so much that
+// the search becomes a random walk.
+// ---------------------------------------------------------------------------
+const LA_BUFFER_SIZE = 200;
+
 /**
  * Compute a proxy total penalty from a flat list of assignments.
  * Rebuilds an in-memory state and sums individual assignment penalties.
@@ -137,31 +167,51 @@ function isSwapValid(
 /**
  * Local search: improves the greedy result via random swap moves.
  *
- * Each iteration picks two random assignments on different shifts and tries
- * swapping their staff members. If the swap passes all hard rules and reduces
- * total penalty, it is accepted (hill-climbing / steepest-descent variant).
+ * Uses Late Acceptance (Burke & Bykov, 2012) rather than plain hill climbing.
+ * The acceptance criterion is: accept the candidate if its penalty is no worse
+ * than the solution LA_BUFFER_SIZE iterations ago. This allows the search to
+ * cross shallow local optima and neutral plateaus that hill climbing would
+ * get stuck in, without the parameter sensitivity of simulated annealing.
  *
- * This is intentionally simple — CAH scale (~300 assignments) doesn't need
- * simulated annealing or sophisticated metaheuristics.
+ * The working solution (subject to LA acceptance) is tracked separately from
+ * the best solution seen, which is returned at the end. This ensures the
+ * search can explore worse territory temporarily without losing improvements.
+ *
+ * Randomness is driven by a seeded mulberry32 PRNG so the same seed always
+ * produces the same schedule — fully reproducible given the seed recorded in
+ * the audit log.
+ *
+ * @param seed  32-bit integer seed for the PRNG. Record this to reproduce.
  */
 export function localSearch(
   result: GenerationResult,
   context: SchedulerContext,
   weights: WeightProfile,
-  maxIterations = 500
+  maxIterations = 500,
+  seed = 0
 ): GenerationResult {
   if (result.assignments.length < 4) return result;
+
+  const rand = mulberry32(seed);
 
   let assignments = [...result.assignments];
   let currentPenalty = computeTotalPenalty(assignments, context, weights);
 
+  // Late Acceptance circular buffer — stores penalties of past solutions
+  const laBuffer = new Array<number>(LA_BUFFER_SIZE).fill(currentPenalty);
+  let laIdx = 0;
+
+  // Track the best solution seen (LA may temporarily accept worse solutions)
+  let bestPenalty = currentPenalty;
+  let bestAssignments = [...assignments];
+
   for (let iter = 0; iter < maxIterations; iter++) {
     // Pick two distinct random assignments on different shifts
-    const i = Math.floor(Math.random() * assignments.length);
-    let j = Math.floor(Math.random() * assignments.length);
+    const i = Math.floor(rand() * assignments.length);
+    let j = Math.floor(rand() * assignments.length);
     let tries = 0;
     while ((j === i || assignments[i].shiftId === assignments[j].shiftId) && tries < 10) {
-      j = Math.floor(Math.random() * assignments.length);
+      j = Math.floor(rand() * assignments.length);
       tries++;
     }
     if (j === i || assignments[i].shiftId === assignments[j].shiftId) continue;
@@ -196,13 +246,24 @@ export function localSearch(
     swapped[j] = newB;
 
     const newPenalty = computeTotalPenalty(swapped, context, weights);
-    if (newPenalty < currentPenalty) {
+
+    // Late Acceptance: accept if no worse than K iterations ago
+    if (newPenalty <= laBuffer[laIdx]) {
       assignments = swapped;
       currentPenalty = newPenalty;
+
+      if (newPenalty < bestPenalty) {
+        bestPenalty = newPenalty;
+        bestAssignments = [...swapped];
+      }
     }
+
+    // Always advance the buffer with the current (post-accept/reject) solution
+    laBuffer[laIdx] = currentPenalty;
+    laIdx = (laIdx + 1) % LA_BUFFER_SIZE;
   }
 
-  return { assignments, understaffed: result.understaffed };
+  return { assignments: bestAssignments, understaffed: result.understaffed };
 }
 
 /**
