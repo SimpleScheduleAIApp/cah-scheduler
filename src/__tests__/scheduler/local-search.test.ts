@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { localSearch } from "@/lib/engine/scheduler/local-search";
+import { localSearch, mulberry32 } from "@/lib/engine/scheduler/local-search";
 import { greedyConstruct } from "@/lib/engine/scheduler/greedy";
 import { BALANCED, FAIR } from "@/lib/engine/scheduler/weight-profiles";
 import { SchedulerState } from "@/lib/engine/scheduler/state";
@@ -228,5 +228,53 @@ describe("localSearch", () => {
     // Understaffed list originates from greedy, local search preserves it
     expect(result10.understaffed).toEqual(greedyResult.understaffed);
     expect(result500.understaffed).toEqual(greedyResult.understaffed);
+  });
+
+  it("produces identical assignments when called twice with the same seed", () => {
+    const staff = Array.from({ length: 6 }, (_, i) => makeStaff(`s${i + 1}`));
+    const shifts = [
+      makeShift("sh1", "2026-02-09", { requiredStaffCount: 2 }),
+      makeShift("sh2", "2026-02-10", { requiredStaffCount: 2 }),
+      makeShift("sh3", "2026-02-11", { requiredStaffCount: 2 }),
+      makeShift("sh4", "2026-02-12", { requiredStaffCount: 2 }),
+    ];
+    const ctx = makeContext(shifts, staff);
+    const greedyResult = greedyConstruct(ctx, BALANCED);
+
+    const SEED = 42;
+    const result1 = localSearch(greedyResult, ctx, BALANCED, 200, SEED);
+    const result2 = localSearch(greedyResult, ctx, BALANCED, 200, SEED);
+
+    // Same seed + same input must produce identical output (reproducibility guarantee)
+    expect(result1.assignments).toEqual(result2.assignments);
+  });
+});
+
+// ─── mulberry32 ────────────────────────────────────────────────────────────────
+
+describe("mulberry32", () => {
+  it("produces the same sequence for the same seed", () => {
+    const rng1 = mulberry32(12345);
+    const rng2 = mulberry32(12345);
+    const seq1 = Array.from({ length: 20 }, () => rng1());
+    const seq2 = Array.from({ length: 20 }, () => rng2());
+    expect(seq1).toEqual(seq2);
+  });
+
+  it("produces different sequences for different seeds", () => {
+    const rng1 = mulberry32(1);
+    const rng2 = mulberry32(2);
+    const seq1 = Array.from({ length: 10 }, () => rng1());
+    const seq2 = Array.from({ length: 10 }, () => rng2());
+    expect(seq1.some((v, i) => v !== seq2[i])).toBe(true);
+  });
+
+  it("produces values in [0, 1)", () => {
+    const rng = mulberry32(9999);
+    for (let i = 0; i < 100; i++) {
+      const v = rng();
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(1);
+    }
   });
 });

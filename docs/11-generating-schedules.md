@@ -180,6 +180,9 @@ On ICU and ER shifts, competency requirements mean only a subset of staff are el
 **Can I mix auto-generated and manual assignments?**
 Yes. After generation, you can open any shift and add, remove, or change assignments individually. Those changes are preserved unless you regenerate.
 
+**Will I get the same schedule if I generate again?**
+No. Each generation run uses a different random seed, so the result will vary slightly even with the same staff and shift data. This is intentional — it lets you generate a few alternatives and pick the best one. However, every run that produces a particular scenario is recorded in the audit log with its seed value, so any specific result can be reproduced exactly by the development team if needed.
+
 ---
 
 *Last Updated: February 2026*
