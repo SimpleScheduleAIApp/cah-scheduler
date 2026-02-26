@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.28] - 2026-02-26
+
+### Fixed
+
+- **Coverage candidate finder: three bugs corrected in `find-candidates.ts`.**
+
+  1. **Rest-hours formula (primary fix — was excluding available staff).** The D-1 rest calculation used `newStartHour − prevEndHour`, which treats both ends as being on the same calendar day. A nurse finishing a day shift at 19:00 on D-1 has 24 hours of rest before a shift starting 19:00 on D, but the formula computed 0 hours and silently excluded them. The correct formula spans midnight: `24h − prevEnd + newStart` for a regular D-1 shift, `newStart − prevEnd` for an overnight D-1 shift (which ends early on D). Also added a D+1 check that was entirely missing: if the candidate has a shift on the day after the new shift, the code now verifies they have ≥10 hours rest after finishing it.
+
+  2. **Role rank check (was surfacing CNAs for RN vacancies).** The three tier functions (float, PRN, regular) had no role compatibility check. A CNA could appear as a recommended candidate for an RN vacancy because the only filter was unit qualification. Added `ROLE_RANK` and `buildVacancyContext` which looks up the original staff member's role; candidates whose role rank is below the vacancy rank are skipped entirely.
+
+  3. **Scoring imbalance (was suppressing better-qualified regular staff).** Flat base scores of 100/80/60 for float/PRN/regular gave PRN a structural +20 advantage that no amount of competency difference could overcome — a Level 2 PRN CNA outranked a Level 4 regular RN. Replaced with competency-relative scoring: `effectiveLevel × 10 + source bonus (30/20/10)`, matching the correct scoring in `escalation.ts`. A non-overtime regular nurse at the same competency level as a PRN nurse now scores identically (overtime source bonus 10 + non-OT bonus 10 = 20 = PRN source bonus 20). Charge nurse awareness added: if the original assignment carried the charge role, candidates who are charge-nurse-qualified receive a +15 bonus, surfacing Level 4+ staff appropriately.
+
+- **Schema: `open_swap_approved` added to `exceptionLog.action` enum.**
+
+  The v1.4.27 open-swap approval path inserted an audit log with action `"open_swap_approved"`, but that value was not in the schema enum, causing a TypeScript error. Added to the allowed values.
+
+- **Schema: `"evening"` added to `staffPreferences.preferredShift` enum.**
+
+  The seed data has used `"evening"` as a shift preference since v1.2.0 but the schema enum only included `"day"`, `"night"`, and `"any"`, causing a long-standing TypeScript error.
+
+### Files Modified
+
+- `src/lib/coverage/find-candidates.ts` — rest-hours formula fix, D+1 check, role rank guard, competency-relative scoring, charge nurse awareness
+- `src/db/schema.ts` — `open_swap_approved` action value, `"evening"` preference value
+
+---
+
 ## [1.4.27] - 2026-02-25
 
 ### Fixed

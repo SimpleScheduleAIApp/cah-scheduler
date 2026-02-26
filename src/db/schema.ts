@@ -167,7 +167,7 @@ export const staffPreferences = sqliteTable(
       .notNull()
       .references(() => staff.id, { onDelete: "cascade" }),
     preferredShift: text("preferred_shift", {
-      enum: ["day", "night", "any"],
+      enum: ["day", "night", "evening", "any"],
     }).default("any"),
     maxHoursPerWeek: integer("max_hours_per_week").default(40),
     maxConsecutiveDays: integer("max_consecutive_days").default(3),
@@ -724,6 +724,7 @@ export const exceptionLog = sqliteTable(
         "scenario_rejected",
         "swap_requested",
         "swap_approved",
+        "open_swap_approved",
         "swap_denied",
         "forced_overtime",
         "manual_assignment",
