@@ -1,11 +1,11 @@
 import { db } from "@/db";
 import { callout, assignment, staff, shift, shiftDefinition } from "@/db/schema";
-import { eq, alias } from "drizzle-orm";
+import { eq, aliasedTable } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { logAuditEvent } from "@/lib/audit/logger";
 import { getEscalationOptions } from "@/lib/callout/escalation";
 
-const replacementStaffAlias = alias(staff, "replacement_staff");
+const replacementStaffAlias = aliasedTable(staff, "replacement_staff");
 
 export async function GET() {
   const callouts = db
