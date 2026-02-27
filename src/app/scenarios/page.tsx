@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -72,7 +72,7 @@ function ScoreBar({ label, score }: { label: string; score: number | null }) {
   );
 }
 
-export default function ScenariosPage() {
+function ScenariosPageContent() {
   const searchParams = useSearchParams();
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [selectedScheduleId, setSelectedScheduleId] = useState<string>(
@@ -343,5 +343,13 @@ export default function ScenariosPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ScenariosPage() {
+  return (
+    <Suspense>
+      <ScenariosPageContent />
+    </Suspense>
   );
 }
