@@ -16,7 +16,7 @@ Auto-generation does **not** guess or take shortcuts. Every assignment it makes 
 
 1. Open any schedule (or create one via the Excel import flow).
 2. Click the **Generate Schedule** button in the top-right corner of the schedule page.
-3. You will be taken to the **Scenarios** page, which shows a progress bar while the system works.
+3. You will be taken to the **Scenarios** page, which shows a progress bar and a three-step tracker — **Balanced → Fairness → Cost** — highlighting each variant as it is built.
 4. Generation typically takes 5–15 seconds for a 6-week schedule.
 5. When complete, the schedule is immediately updated with the Balanced variant, and two alternative scenarios appear on the Scenarios page.
 

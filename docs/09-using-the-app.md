@@ -237,7 +237,7 @@ The Balanced variant is applied to the schedule automatically. You can review th
 ### What You'll See
 
 - **Schedule dropdown** - Select which schedule to view scenarios for (auto-filled when you arrive from the Schedule page)
-- **Generate Schedule button** - Starts generation; shows a live progress bar while it runs
+- **Generate Schedule button** - Starts generation; shows a live progress bar and a three-step tracker (Balanced → Fairness → Cost) that highlights each variant as it is built
 - **Scenario cards** - One per variant, each showing score bars for Coverage, Fairness, Cost, Preference, and Skill Mix
 - **Overall score** - A single percentage summarising the variant's quality
 - **Status badge** - Draft (available), Active Schedule (currently applied), or Rejected
@@ -248,7 +248,7 @@ The Balanced variant is applied to the schedule automatically. You can review th
 | Task | How To |
 |------|--------|
 | Generate all three variants | Select a schedule, click "Generate Schedule" |
-| Watch generation progress | Progress bar and phase label appear automatically |
+| Watch generation progress | Progress bar and three-step tracker (Balanced → Fairness → Cost) appear automatically; each step highlights as its variant finishes |
 | Compare variants | View score bars side-by-side on the cards |
 | Switch to a different variant | Click **"Apply"** on the card you prefer (available on any non-active variant, including previously rejected ones) |
 | Dismiss a variant you don't want | Click **"Reject"** (only available while the variant is in Draft status) |
