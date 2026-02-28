@@ -76,6 +76,7 @@ export async function PUT(
           previousState: { status: existing.status },
           newState: { status: "approved", selectedSource: "agency" },
           performedBy: body.approvedBy || "nurse_manager",
+          createdAt: new Date().toISOString(),
         })
         .run();
 
@@ -147,6 +148,7 @@ export async function PUT(
         previousState: { status: existing.status },
         newState: { status: "filled", filledByStaffId: body.selectedStaffId, source },
         performedBy: body.approvedBy || "nurse_manager",
+        createdAt: new Date().toISOString(),
       })
       .run();
 
@@ -221,6 +223,7 @@ export async function PUT(
         previousState: { status: existing.status },
         newState: { status: "filled", filledByStaffId: body.filledByStaffId },
         performedBy: body.performedBy || "nurse_manager",
+        createdAt: new Date().toISOString(),
       })
       .run();
 
@@ -248,6 +251,7 @@ export async function PUT(
         previousState: { status: existing.status },
         newState: { status: "cancelled" },
         performedBy: body.performedBy || "nurse_manager",
+        createdAt: new Date().toISOString(),
       })
       .run();
 

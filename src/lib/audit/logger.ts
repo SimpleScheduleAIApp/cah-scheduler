@@ -39,5 +39,6 @@ export function logAuditEvent(params: {
     overriddenRuleId: params.overriddenRuleId,
     justification: params.justification,
     performedBy: params.performedBy ?? "nurse_manager",
+    createdAt: new Date().toISOString(),
   }).run();
 }

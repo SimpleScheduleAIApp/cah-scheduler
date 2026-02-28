@@ -208,7 +208,7 @@ function ScenariosPageContent() {
         <div className="mb-6 rounded-lg border bg-muted/30 p-4">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-medium">
-              {jobStatus.currentPhase ?? "Working…"}
+              {jobStatus.currentPhase ?? "Starting…"}
             </span>
             <span className="text-sm text-muted-foreground">{jobStatus.progress}%</span>
           </div>
@@ -218,9 +218,32 @@ function ScenariosPageContent() {
               style={{ width: `${jobStatus.progress}%` }}
             />
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Running 3 variants in parallel (Balanced, Fairness-Optimized, Cost-Optimized)…
-          </p>
+          {/* Step tracker — shows which variant is currently being built */}
+          <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+            {[
+              { label: "Balanced", sub: "All priorities", start: 10, done: 45 },
+              { label: "Fairness", sub: "Weekend equity", start: 45, done: 65 },
+              { label: "Cost", sub: "Min. overtime", start: 65, done: 85 },
+            ].map(({ label, sub, start, done }) => {
+              const active = jobStatus.progress >= start && jobStatus.progress < done;
+              const complete = jobStatus.progress >= done;
+              return (
+                <div
+                  key={label}
+                  className={`rounded px-2 py-1 text-center transition-colors ${
+                    complete
+                      ? "bg-green-100 text-green-700"
+                      : active
+                      ? "bg-primary/10 text-primary font-medium"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {complete ? "✓ " : active ? "→ " : ""}{label}
+                  <div className="mt-0.5 font-normal opacity-75">{sub}</div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

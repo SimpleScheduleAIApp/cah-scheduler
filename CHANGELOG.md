@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.33] - 2026-02-28
+
+### Fixed
+
+- **Audit trail text no longer overlaps columns.**
+
+  The description column previously used an invalid Tailwind class (`wrap-break-word`) and the table had no `table-fixed` layout, so column widths were ignored by the browser and long descriptions pushed into adjacent columns. The table is now rendered with `table-layout: fixed` and the description cell overrides the Radix `TableCell` default `whitespace-nowrap` with `whitespace-normal`, so text wraps within the allocated column width.
+
+- **Audit entries now appear in correct chronological order.**
+
+  Audit writes that went directly to `db.insert(exceptionLog)` (leave approval, callout creation from leave, open shift fill/cancel) were omitting `createdAt`, letting SQLite default to `datetime('now')` which produces a space-separated UTC string (e.g. `2026-02-28 10:04:06`). Entries written through `logAuditEvent` used `new Date().toISOString()` which produces a T-separated string (e.g. `2026-02-28T10:04:06.000Z`). Because space (ASCII 32) sorts before T (ASCII 84), all T-format entries appeared above all space-format entries regardless of actual wall-clock time. All direct `db.insert(exceptionLog)` calls now explicitly pass `createdAt: new Date().toISOString()`, and `logAuditEvent` in `logger.ts` also sets `createdAt` explicitly.
+
+- **Leave approval callout audit logged with correct entity ID and staff name.**
+
+  When a leave approval triggered an urgent callout (shift within the callout threshold), the callout insert used `.run()` which discards the returned row, so the audit entry used `a.assignmentId` as the entity ID instead of the new callout's own ID. The description also embedded the raw staff UUID instead of the staff's full name. The insert is now `.returning().get()` so `newCallout.id` is captured and used as `entityId`, and `staffName` is resolved before the function is called and passed through to the description string.
+
+- **Schedule generation progress tracker replaced static label with animated step indicator.**
+
+  The progress overlay during schedule generation previously showed a static line "Running 3 variants in parallel (Balanced, Fairness-Optimized, Cost-Optimized)…". This has been replaced with a three-column step tracker that highlights the currently active variant (Balanced / Fairness / Cost) in real time based on the job's reported progress percentage, and marks completed steps with a check mark.
+
+### Files Modified
+
+- `src/app/audit/page.tsx` — `table-fixed w-full` on table, `whitespace-normal` on description cell, `ExpandableText` component removed, time cell split to date + time lines
+- `src/lib/audit/logger.ts` — explicit `createdAt: new Date().toISOString()` on all inserts
+- `src/app/api/staff-leave/[id]/route.ts` — callout insert changed to `.returning().get()`, `newCallout.id` as audit entityId, `staffName` passed to `handleLeaveApproval`, `createdAt` added to all direct audit inserts
+- `src/app/api/open-shifts/[id]/route.ts` — `createdAt: new Date().toISOString()` added to all four direct audit inserts (agency fill, approve fill, legacy fill, cancel)
+- `src/app/scenarios/page.tsx` — animated 3-step tracker replacing static progress label
+
+---
+
+## [1.4.32] - 2026-02-28
+
+### Fixed
+
+- **Railway production build no longer fails on the scenarios page.**
+
+  Next.js 15+ requires components that call `useSearchParams()` to be wrapped in a `<Suspense>` boundary, or the build fails with a static generation error. The scenarios page was calling `useSearchParams` at the top level of a client component without a boundary. The page is now split into a thin `ScenariosPage` shell (the default export) that wraps `ScenariosPageContent` in `<Suspense>`, which satisfies the Next.js build requirement.
+
+### Files Modified
+
+- `src/app/scenarios/page.tsx` — `ScenariosPageContent` extracted and wrapped in `<Suspense>` inside the default export
+
+---
+
 ## [1.4.31] - 2026-02-26
 
 ### Fixed

@@ -94,6 +94,7 @@ function exportToCsv(logs: AuditEntry[]) {
   URL.revokeObjectURL(url);
 }
 
+
 export default function AuditPage() {
   const [logs, setLogs] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -214,7 +215,7 @@ export default function AuditPage() {
           ) : logs.length === 0 ? (
             <p className="text-muted-foreground">No audit entries found.</p>
           ) : (
-            <Table>
+            <Table className="table-fixed w-full">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-36">Time</TableHead>
@@ -227,28 +228,29 @@ export default function AuditPage() {
               <TableBody>
                 {logs.map((entry) => (
                   <TableRow key={entry.id}>
-                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                      {new Date(entry.createdAt).toLocaleString()}
+                    <TableCell className="text-sm text-muted-foreground align-top">
+                      <div>{new Date(entry.createdAt).toLocaleDateString()}</div>
+                      <div className="text-xs opacity-70">{new Date(entry.createdAt).toLocaleTimeString()}</div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="align-top overflow-hidden">
                       <Badge
                         variant={actionColors[entry.action] ?? "secondary"}
                       >
                         {actionLabels[entry.action] ?? entry.action}
                       </Badge>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="align-top overflow-hidden">
                       <Badge variant="outline">{entry.entityType}</Badge>
                     </TableCell>
-                    <TableCell className="text-sm wrap-break-word max-w-sm">
-                      {entry.description}
+                    <TableCell className="text-sm break-words align-top whitespace-normal">
+                      <div>{entry.description}</div>
                       {entry.justification && (
                         <p className="mt-1 text-xs text-muted-foreground">
                           Justification: {entry.justification}
                         </p>
                       )}
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                    <TableCell className="text-sm text-muted-foreground align-top">
                       {entry.performedBy}
                     </TableCell>
                   </TableRow>

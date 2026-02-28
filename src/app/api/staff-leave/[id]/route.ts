@@ -86,12 +86,13 @@ export async function PUT(
         previousState: { status: existing.status },
         newState: { status: body.status, denialReason: body.denialReason },
         performedBy: body.approvedBy || "nurse_manager",
+        createdAt: new Date().toISOString(),
       })
       .run();
 
     // If approved, create open shifts or callouts for affected assignments
     if (body.status === "approved") {
-      await handleLeaveApproval(existing.staffId, updated!.startDate, updated!.endDate);
+      await handleLeaveApproval(existing.staffId, staffName, updated!.startDate, updated!.endDate);
     }
   }
 
@@ -103,7 +104,7 @@ export async function PUT(
  * - If shift is within callout threshold days: create callout (urgent - follow escalation)
  * - If shift is beyond threshold: find top 3 replacement candidates and present for approval
  */
-async function handleLeaveApproval(staffId: string, startDate: string, endDate: string) {
+async function handleLeaveApproval(staffId: string, staffName: string, startDate: string, endDate: string) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -154,7 +155,7 @@ async function handleLeaveApproval(staffId: string, startDate: string, endDate: 
     if (daysUntilShift <= calloutThreshold) {
       // Create callout (urgent - within threshold)
       // This follows the existing escalation workflow
-      db.insert(callout)
+      const newCallout = db.insert(callout)
         .values({
           assignmentId: a.assignmentId,
           staffId: staffId,
@@ -163,16 +164,18 @@ async function handleLeaveApproval(staffId: string, startDate: string, endDate: 
           reasonDetail: "Leave approved - urgent replacement needed",
           status: "open",
         })
-        .run();
+        .returning()
+        .get();
 
       // Log the callout creation
       db.insert(exceptionLog)
         .values({
           entityType: "callout",
-          entityId: a.assignmentId,
+          entityId: newCallout.id,
           action: "callout_logged",
-          description: `Callout created due to approved leave for staff ${staffId}, shift on ${a.shiftDate}`,
+          description: `Callout created due to approved leave for ${staffName}, shift on ${a.shiftDate}`,
           performedBy: "system",
+          createdAt: new Date().toISOString(),
         })
         .run();
     } else {
@@ -214,6 +217,7 @@ async function handleLeaveApproval(staffId: string, startDate: string, endDate: 
             escalationStepsChecked,
           },
           performedBy: "system",
+          createdAt: new Date().toISOString(),
         })
         .run();
     }
