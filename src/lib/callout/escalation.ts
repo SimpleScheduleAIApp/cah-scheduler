@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { staff, staffLeave, assignment, shift, shiftDefinition } from "@/db/schema";
+import { staff, staffLeave, assignment, shift, shiftDefinition, schedule } from "@/db/schema";
 import { eq, and, ne, gte, lte } from "drizzle-orm";
 
 // Role hierarchy: replacement must have equal or higher rank than the called-out nurse
@@ -27,6 +27,8 @@ export interface ReplacementCandidate {
   score: number;              // numeric rank (higher = better)
   hoursThisWeek: number;      // hours already scheduled in the shift's calendar week
   restHoursBefore?: number;   // hours of rest between candidate's last preceding shift and this one
+  weekendsThisPeriod: number; // weekend shifts already assigned in the current schedule period
+  consecutiveDaysBeforeShift: number; // consecutive working days ending the day before the shift
 }
 
 function timeToMins(time: string): number {
@@ -54,6 +56,59 @@ function weekBounds(date: string): { weekStart: string; weekEnd: string } {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Helpers for weekend count and consecutive days
+// ---------------------------------------------------------------------------
+
+function countWeekendsInSchedulePeriod(staffId: string, scheduleId: string): number {
+  const sched = db.select({ startDate: schedule.startDate, endDate: schedule.endDate })
+    .from(schedule).where(eq(schedule.id, scheduleId)).get();
+  if (!sched) return 0;
+
+  const rows = db
+    .select({ date: shift.date })
+    .from(assignment)
+    .innerJoin(shift, eq(assignment.shiftId, shift.id))
+    .where(
+      and(
+        eq(assignment.staffId, staffId),
+        gte(shift.date, sched.startDate),
+        lte(shift.date, sched.endDate),
+        ne(assignment.status, "cancelled")
+      )
+    )
+    .all();
+
+  return rows.filter((r) => {
+    const day = new Date(r.date + "T00:00:00Z").getUTCDay();
+    return day === 0 || day === 6; // Sunday or Saturday
+  }).length;
+}
+
+function countConsecutiveDaysBefore(staffId: string, shiftDate: string): number {
+  let count = 0;
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(shiftDate + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const hasShift = db
+      .select({ id: assignment.id })
+      .from(assignment)
+      .innerJoin(shift, eq(assignment.shiftId, shift.id))
+      .where(
+        and(
+          eq(assignment.staffId, staffId),
+          eq(shift.date, dateStr),
+          ne(assignment.status, "cancelled")
+        )
+      )
+      .get();
+    if (!hasShift) break;
+    count++;
+  }
+  return count;
+}
+
 export function getEscalationOptions(
   shiftId: string,
   calledOutStaffId: string
@@ -67,6 +122,7 @@ export function getEscalationOptions(
       endTime: shiftDefinition.endTime,
       durationHours: shiftDefinition.durationHours,
       shiftType: shiftDefinition.shiftType,
+      scheduleId: shift.scheduleId,
     })
     .from(shift)
     .innerJoin(shiftDefinition, eq(shift.shiftDefinitionId, shiftDefinition.id))
@@ -270,11 +326,7 @@ export function getEscalationOptions(
         reasons.push("PRN staff — available on this date");
         break;
       case "overtime":
-        reasons.push(
-          wouldBeOvertime
-            ? "Would incur overtime (1.5×)"
-            : "Extra shift (within 40 h)"
-        );
+        // Overtime/hours context is shown as a con in the UI — not a pro
         break;
       case "agency":
         reasons.push("Agency — last resort");
@@ -359,6 +411,8 @@ export function getEscalationOptions(
       score,
       hoursThisWeek,
       restHoursBefore,
+      weekendsThisPeriod: countWeekendsInSchedulePeriod(s.id, shiftRow.scheduleId),
+      consecutiveDaysBeforeShift: countConsecutiveDaysBefore(s.id, shiftRow.date),
     });
   }
 

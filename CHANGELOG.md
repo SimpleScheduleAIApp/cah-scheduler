@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.34] - 2026-02-28
+
+### Added
+
+- **Candidate recommendations now show a Pros / Cons breakdown on both the Callouts and Coverage Requests pages.**
+
+  Previously all candidate information was presented as a flat bullet list with no distinction between strengths and trade-offs. Critical risks were buried — most importantly, if the original nurse held the charge role, a non-qualified replacement could be approved without any visible warning.
+
+  **Pros (green ✓):** float/PRN source, competency match, reliability signals, charge-qualified confirmation (when the original was charge).
+
+  **Cons (amber/red ✗):** overtime cost (`isOvertime`), weekend burden (≥ 3 weekends already worked this period), consecutive-day fatigue (≥ 4 consecutive days before the shift), and — in red — "Not charge nurse qualified — hard rule violation" when the original was charge but this candidate is not.
+
+  **Charge nurse warning banner:** a prominent banner appears at the top of the dialog when the original nurse held the charge role and no recommended candidate is charge-qualified.
+
+- **Two new scheduling signals computed for every candidate:** `weekendsThisPeriod` (count of weekends worked in the current schedule period) and `consecutiveDaysBeforeShift` (count of consecutive working days immediately before the target shift). These are computed from live DB data each time escalation options are requested, so they reflect the most current schedule state.
+
+- **Coverage requests API now exposes `originalWasChargeNurse`** via a left join on the original assignment record, enabling the Coverage Requests page to show the charge nurse warning banner.
+
+### Files Modified
+
+- `src/lib/callout/escalation.ts` — `weekendsThisPeriod` and `consecutiveDaysBeforeShift` added to `ReplacementCandidate` interface and computed via two new helper functions; overtime text removed from `reasons` array (now surfaced as a con in the UI)
+- `src/lib/coverage/find-candidates.ts` — `isChargeNurseQualified`, `weekendsThisPeriod`, and `consecutiveDaysBeforeShift` added to `CandidateRecommendation` interface and populated for all tiers (float, PRN, overtime, agency); overtime text removed from reasons in the overtime tier
+- `src/app/api/open-shifts/route.ts` — GET handler adds `originalWasChargeNurse` via `aliasedTable` left join on `assignment`
+- `src/app/callouts/page.tsx` — interface updated; charge nurse banner improved; candidate card restructured with Pros / Cons sections
+- `src/app/open-shifts/page.tsx` — interfaces updated; charge nurse warning banner added; candidate card restructured with Pros / Cons sections
+
+---
+
 ## [1.4.33] - 2026-02-28
 
 ### Fixed

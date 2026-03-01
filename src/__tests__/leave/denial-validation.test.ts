@@ -51,21 +51,30 @@ vi.mock("@/db/schema", () => ({
   staff:        { id: "staff$id", firstName: "staff$firstName", lastName: "staff$lastName" },
 }));
 
-vi.mock("@/db", () => ({
-  db: {
-    select: () => ({ from: () => ({ where: () => ({ get: mockSelectGet }), all: vi.fn(() => []) }) }),
-    update: () => ({
-      set: () => ({
-        where: () => ({
-          returning: () => ({ get: mockUpdateRetGet }),
-          run: mockUpdateRun,
+vi.mock("@/db", () => {
+  // Self-referential chain so .innerJoin().innerJoin().where() works
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fromResult: any = {
+    where: () => ({ get: mockSelectGet, all: vi.fn(() => []) }),
+    all: vi.fn(() => []),
+  };
+  fromResult.innerJoin = () => fromResult;
+  return {
+    db: {
+      select: () => ({ from: () => fromResult }),
+      update: () => ({
+        set: () => ({
+          where: () => ({
+            returning: () => ({ get: mockUpdateRetGet }),
+            run: mockUpdateRun,
+          }),
         }),
       }),
-    }),
-    insert: () => ({ values: () => ({ run: mockInsertRun, returning: () => ({ get: vi.fn(() => ({ id: "new-id" })) }) }) }),
-    delete: () => ({ where: () => ({ run: vi.fn() }) }),
-  },
-}));
+      insert: () => ({ values: () => ({ run: mockInsertRun, returning: () => ({ get: vi.fn(() => ({ id: "new-id" })) }) }) }),
+      delete: () => ({ where: () => ({ run: vi.fn() }) }),
+    },
+  };
+});
 
 vi.mock("@/lib/coverage/find-candidates", () => ({
   findCandidatesForShift: vi.fn(async () => ({ candidates: [], escalationStepsChecked: [] })),

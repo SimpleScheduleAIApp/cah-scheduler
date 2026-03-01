@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { staff, assignment, shift, shiftDefinition, staffLeave, prnAvailability } from "@/db/schema";
+import { staff, assignment, shift, shiftDefinition, staffLeave, prnAvailability, schedule } from "@/db/schema";
 import { eq, and, ne, gte, lte, or } from "drizzle-orm";
 import { addDays, parseISO, format, startOfWeek, endOfWeek } from "date-fns";
 
@@ -26,12 +26,15 @@ export interface CandidateRecommendation {
   staffName: string;
   role: string;
   icuCompetencyLevel: number;
+  isChargeNurseQualified: boolean;
   source: "float" | "per_diem" | "overtime" | "agency";
   reasons: string[];
   score: number;
   isOvertime: boolean;
   hoursThisWeek: number;
   restHoursBefore?: number; // hours of rest between candidate's last preceding shift and this one
+  weekendsThisPeriod: number;
+  consecutiveDaysBeforeShift: number;
 }
 
 interface ShiftDetails {
@@ -53,6 +56,59 @@ interface VacancyContext {
   calledOutLevel: number;
   /** True when the original assignment carried the charge nurse role. */
   chargeRequired: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for weekend count and consecutive days
+// ---------------------------------------------------------------------------
+
+function countWeekendsInSchedulePeriod(staffId: string, scheduleId: string): number {
+  const sched = db.select({ startDate: schedule.startDate, endDate: schedule.endDate })
+    .from(schedule).where(eq(schedule.id, scheduleId)).get();
+  if (!sched) return 0;
+
+  const rows = db
+    .select({ date: shift.date })
+    .from(assignment)
+    .innerJoin(shift, eq(assignment.shiftId, shift.id))
+    .where(
+      and(
+        eq(assignment.staffId, staffId),
+        gte(shift.date, sched.startDate),
+        lte(shift.date, sched.endDate),
+        ne(assignment.status, "cancelled")
+      )
+    )
+    .all();
+
+  return rows.filter((r) => {
+    const day = new Date(r.date + "T00:00:00Z").getUTCDay();
+    return day === 0 || day === 6;
+  }).length;
+}
+
+function countConsecutiveDaysBefore(staffId: string, shiftDate: string): number {
+  let count = 0;
+  for (let i = 1; i <= 7; i++) {
+    const d = new Date(shiftDate + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const hasShift = db
+      .select({ id: assignment.id })
+      .from(assignment)
+      .innerJoin(shift, eq(assignment.shiftId, shift.id))
+      .where(
+        and(
+          eq(assignment.staffId, staffId),
+          eq(shift.date, dateStr),
+          ne(assignment.status, "cancelled")
+        )
+      )
+      .get();
+    if (!hasShift) break;
+    count++;
+  }
+  return count;
 }
 
 // ---------------------------------------------------------------------------
@@ -113,11 +169,14 @@ export async function findCandidatesForShift(
     staffName: "Request Agency Staff",
     role: "Agency",
     icuCompetencyLevel: 0,
+    isChargeNurseQualified: false,
     source: "agency",
     reasons: ["External staffing agency", "Requires phone call to agency", "Higher cost option"],
     score: 10,
     isOvertime: false,
     hoursThisWeek: 0,
+    weekendsThisPeriod: 0,
+    consecutiveDaysBeforeShift: 0,
   });
 
   const sortedCandidates = allCandidates
@@ -248,6 +307,7 @@ async function findFloatCandidates(
       staffName: `${s.firstName} ${s.lastName}`,
       role: s.role,
       icuCompetencyLevel: s.icuCompetencyLevel,
+      isChargeNurseQualified: s.isChargeNurseQualified,
       source: "float",
       reasons,
       score: candidateScore(
@@ -257,6 +317,8 @@ async function findFloatCandidates(
       isOvertime: hoursThisWeek + shiftDetails.durationHours > 40,
       hoursThisWeek,
       restHoursBefore: availability.restHoursBefore,
+      weekendsThisPeriod: countWeekendsInSchedulePeriod(s.id, shiftDetails.scheduleId),
+      consecutiveDaysBeforeShift: countConsecutiveDaysBefore(s.id, shiftDetails.date),
     });
   }
 
@@ -316,6 +378,7 @@ async function findPRNCandidates(
       staffName: `${s.firstName} ${s.lastName}`,
       role: s.role,
       icuCompetencyLevel: s.icuCompetencyLevel,
+      isChargeNurseQualified: s.isChargeNurseQualified,
       source: "per_diem",
       reasons,
       score: candidateScore(
@@ -325,6 +388,8 @@ async function findPRNCandidates(
       isOvertime: false,
       hoursThisWeek,
       restHoursBefore: availability.restHoursBefore,
+      weekendsThisPeriod: countWeekendsInSchedulePeriod(s.id, shiftDetails.scheduleId),
+      consecutiveDaysBeforeShift: countConsecutiveDaysBefore(s.id, shiftDetails.date),
     });
   }
 
@@ -367,11 +432,7 @@ async function findOvertimeCandidates(
     const wouldBeOvertime = hoursThisWeek + shiftDetails.durationHours > 40;
 
     const reasons: string[] = [];
-    if (wouldBeOvertime) {
-      reasons.push("Would be overtime (OT pay applies)");
-    } else {
-      reasons.push("Extra shift (within 40 hours)");
-    }
+    // Overtime/hours context is shown as a con in the UI — not included in reasons
     if (isHomeUnit) {
       reasons.push(`Home unit is ${shiftDetails.unit}`);
     } else {
@@ -385,6 +446,7 @@ async function findOvertimeCandidates(
       staffName: `${s.firstName} ${s.lastName}`,
       role: s.role,
       icuCompetencyLevel: s.icuCompetencyLevel,
+      isChargeNurseQualified: s.isChargeNurseQualified,
       source: "overtime",
       reasons,
       score: candidateScore(
@@ -394,6 +456,8 @@ async function findOvertimeCandidates(
       isOvertime: wouldBeOvertime,
       hoursThisWeek,
       restHoursBefore: availability.restHoursBefore,
+      weekendsThisPeriod: countWeekendsInSchedulePeriod(s.id, shiftDetails.scheduleId),
+      consecutiveDaysBeforeShift: countConsecutiveDaysBefore(s.id, shiftDetails.date),
     });
   }
 

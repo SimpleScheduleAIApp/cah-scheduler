@@ -85,11 +85,11 @@ Manager approves one → Assignment created!
 - Go to Coverage page (`/open-shifts`)
 - See "Pending Approval" requests
 - Click "Review" to see top 3 candidates
-- Each candidate shows reasons like:
-  - "Float pool staff - designed for coverage"
-  - "PRN staff - marked available for this date"
-  - "Would be overtime (OT pay applies)"
-  - "High reliability rating (4/5)"
+- Each candidate card shows a **Pros / Cons** breakdown:
+  - **Pros (green ✓):** float pool source, competency level, home unit match, reliability rating, charge-qualified (when the original nurse held the charge role)
+  - **Cons (amber ✗):** overtime cost, weekend burden (≥ 3 weekends already worked this period), consecutive-day fatigue (≥ 4 consecutive days before this shift)
+  - **Cons (red ✗):** "Not charge nurse qualified — will create hard rule violation" when the original nurse was charge and this candidate is not
+- A **charge nurse warning banner** appears at the top of the dialog when the original nurse held the charge role and none of the candidates are charge-qualified (Level 4+)
 - Click "Approve" on chosen candidate
 - Assignment is created automatically
 

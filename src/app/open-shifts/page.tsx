@@ -32,6 +32,9 @@ interface CandidateRecommendation {
   isOvertime: boolean;
   hoursThisWeek: number;
   restHoursBefore?: number;
+  isChargeNurseQualified?: boolean;
+  weekendsThisPeriod?: number;
+  consecutiveDaysBeforeShift?: number;
 }
 
 interface CoverageRequestData {
@@ -60,6 +63,7 @@ interface CoverageRequestData {
   unit: string;
   originalStaffFirstName: string;
   originalStaffLastName: string;
+  originalWasChargeNurse?: boolean | null;
 }
 
 const PRIORITY_VARIANTS: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
@@ -327,6 +331,16 @@ export default function CoverageRequestsPage() {
                 <strong>Checked:</strong> {selectedRequest.escalationStepsChecked?.map(s => SOURCE_LABELS[s] || s).join(" → ")}
               </div>
 
+              {/* Charge nurse warning banner */}
+              {selectedRequest.originalWasChargeNurse &&
+                !selectedRequest.recommendations?.some(c => c.isChargeNurseQualified) && (
+                <div className="rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+                  <span className="font-medium">⚠️ The original nurse was the charge nurse for this shift.</span>{" "}
+                  None of the recommended candidates are charge nurse qualified (Level 4+). Approving any option
+                  will assign an unqualified nurse as charge nurse, creating a hard rule violation.
+                </div>
+              )}
+
               {/* Candidate Recommendations */}
               <div className="space-y-3">
                 <h4 className="font-medium">Top 3 Recommendations</h4>
@@ -335,57 +349,86 @@ export default function CoverageRequestsPage() {
                     key={candidate.staffId}
                     className="rounded-lg border p-4 hover:bg-muted/50 transition-colors"
                   >
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 space-y-1.5">
+                        {/* Name row */}
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-lg font-semibold">
+                          <span className="text-sm font-semibold">
                             {index + 1}. {candidate.staffName}
                           </span>
                           {candidate.staffId !== "agency" && candidate.role && (
                             <Badge variant="secondary" className="text-xs">{candidate.role}</Badge>
                           )}
                           {candidate.staffId !== "agency" && candidate.icuCompetencyLevel !== undefined && (
-                            <span className="text-xs font-medium text-muted-foreground">
+                            <span className="text-xs text-muted-foreground">
                               Lv {candidate.icuCompetencyLevel}/5
                             </span>
                           )}
-                          <span className={`text-xs px-2 py-1 rounded font-medium ${SOURCE_COLORS[candidate.source]}`}>
+                          <span className={`text-xs px-2 py-0.5 rounded font-medium ${SOURCE_COLORS[candidate.source]}`}>
                             {SOURCE_LABELS[candidate.source]}
                           </span>
-                          {candidate.isOvertime && (
-                            <Badge variant="outline" className="text-yellow-600 border-yellow-600">
-                              OT
-                            </Badge>
-                          )}
                         </div>
-                        <ul className="text-sm text-muted-foreground space-y-1">
-                          {candidate.reasons.map((reason, i) => (
-                            <li key={i} className="flex items-center gap-2">
-                              <span className="text-green-600">✓</span>
-                              {reason}
-                            </li>
-                          ))}
-                        </ul>
-                        {candidate.staffId !== "agency" && (
-                          <div className="text-xs text-muted-foreground space-y-0.5">
-                            <p>
-                              Hours this week: {candidate.hoursThisWeek}h
-                              {candidate.isOvertime && ` (+${selectedRequest.durationHours}h = overtime)`}
-                            </p>
-                            {candidate.restHoursBefore !== undefined ? (
-                              <p className={candidate.restHoursBefore < 12 ? "text-amber-600" : ""}>
-                                Rest before shift: {Math.round(candidate.restHoursBefore)}h
-                                {candidate.restHoursBefore < 12 ? " — short turnaround" : ""}
-                              </p>
-                            ) : (
-                              <p>Rest before shift: 24h+</p>
+
+                        {/* Pros */}
+                        {candidate.reasons.length > 0 && (
+                          <ul className="space-y-0.5">
+                            {candidate.reasons.map((reason, i) => (
+                              <li key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                                <span className="mt-px shrink-0 text-green-600 font-medium">✓</span>
+                                {reason}
+                              </li>
+                            ))}
+                            {candidate.isChargeNurseQualified && selectedRequest.originalWasChargeNurse && (
+                              <li className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                                <span className="mt-px shrink-0 text-green-600 font-medium">✓</span>
+                                Charge nurse qualified
+                              </li>
                             )}
-                          </div>
+                          </ul>
+                        )}
+
+                        {/* Cons */}
+                        {(() => {
+                          const cons: { text: string; red?: boolean }[] = [];
+                          if (candidate.isOvertime)
+                            cons.push({ text: `Overtime — ${candidate.hoursThisWeek}h this week (+${selectedRequest.durationHours}h = OT cost)` });
+                          if ((candidate.weekendsThisPeriod ?? 0) >= 3)
+                            cons.push({ text: `${candidate.weekendsThisPeriod} weekends already worked this period` });
+                          if ((candidate.consecutiveDaysBeforeShift ?? 0) >= 4)
+                            cons.push({ text: `${candidate.consecutiveDaysBeforeShift} consecutive days — this would be day ${(candidate.consecutiveDaysBeforeShift ?? 0) + 1}` });
+                          if (selectedRequest.originalWasChargeNurse && !candidate.isChargeNurseQualified && candidate.staffId !== "agency")
+                            cons.push({ text: "Not charge nurse qualified — will create hard rule violation", red: true });
+                          if (cons.length === 0) return null;
+                          return (
+                            <ul className="space-y-0.5">
+                              {cons.map((con, i) => (
+                                <li key={i} className={`flex items-start gap-1.5 text-xs ${con.red ? "text-red-600" : "text-amber-600"}`}>
+                                  <span className="mt-px shrink-0">✗</span>
+                                  {con.text}
+                                </li>
+                              ))}
+                            </ul>
+                          );
+                        })()}
+
+                        {/* Rest before shift */}
+                        {candidate.staffId !== "agency" && (
+                          <p className={`text-xs ${
+                            candidate.restHoursBefore !== undefined && candidate.restHoursBefore < 12
+                              ? "text-amber-600"
+                              : "text-muted-foreground"
+                          }`}>
+                            · Rest before shift:{" "}
+                            {candidate.restHoursBefore !== undefined
+                              ? `${Math.round(candidate.restHoursBefore)}h${candidate.restHoursBefore < 12 ? " — short turnaround" : ""}`
+                              : "24h+"}
+                          </p>
                         )}
                       </div>
                       <Button
                         onClick={() => handleApproveCandidate(candidate.staffId)}
                         variant={index === 0 ? "default" : "outline"}
+                        className="shrink-0"
                       >
                         {candidate.staffId === "agency" ? "Contact Agency" : "Approve"}
                       </Button>

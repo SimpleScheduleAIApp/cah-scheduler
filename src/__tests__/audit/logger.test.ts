@@ -37,7 +37,7 @@ describe("logAuditEvent", () => {
     vi.clearAllMocks();
   });
 
-  it("calls db.insert with exceptionLog table", () => {
+  it("calls db.insert with exceptionLog table", async () => {
     const { exceptionLog } = await import("@/db/schema");
     logAuditEvent(baseParams);
     expect(mockInsert).toHaveBeenCalledWith(exceptionLog);

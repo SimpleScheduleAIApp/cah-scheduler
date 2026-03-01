@@ -1,9 +1,11 @@
 import { db } from "@/db";
 import { openShift, shift, shiftDefinition, staff, assignment, exceptionLog } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, aliasedTable } from "drizzle-orm";
 import { NextResponse } from "next/server";
 
 export async function GET() {
+  const originalAssignment = aliasedTable(assignment, "original_assignment");
+
   const coverageRequests = db
     .select({
       id: openShift.id,
@@ -36,11 +38,14 @@ export async function GET() {
       // Original staff name
       originalStaffFirstName: staff.firstName,
       originalStaffLastName: staff.lastName,
+      // Whether original nurse held the charge role
+      originalWasChargeNurse: originalAssignment.isChargeNurse,
     })
     .from(openShift)
     .innerJoin(shift, eq(openShift.shiftId, shift.id))
     .innerJoin(shiftDefinition, eq(shift.shiftDefinitionId, shiftDefinition.id))
     .innerJoin(staff, eq(openShift.originalStaffId, staff.id))
+    .leftJoin(originalAssignment, eq(openShift.originalAssignmentId, originalAssignment.id))
     .orderBy(shift.date)
     .all();
 

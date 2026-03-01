@@ -75,6 +75,8 @@ interface ReplacementCandidate {
   score: number;
   hoursThisWeek: number;
   restHoursBefore?: number;
+  weekendsThisPeriod?: number;
+  consecutiveDaysBeforeShift?: number;
 }
 
 interface ScheduleInfo {
@@ -539,7 +541,12 @@ export default function CalloutsPage() {
           {/* Charge nurse warning banner */}
           {chargeNurseRequired && (
             <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Called-out nurse held the charge role — only charge-qualified staff are eligible
+              <span className="font-medium">⚠️ Original nurse held the charge role.</span> Only Level 4+ charge-qualified staff are eligible.
+              {escalationOptions.filter((x) => x.isEligible && x.isChargeNurseQualified).length === 0 && (
+                <span className="mt-0.5 block font-medium">
+                  No charge-qualified candidates available — escalate to agency or reassign charge manually.
+                </span>
+              )}
             </div>
           )}
 
@@ -601,16 +608,41 @@ export default function CalloutsPage() {
                       </Button>
                     </div>
 
-                    {/* Reasons */}
+                    {/* Pros */}
                     {c.isEligible && c.reasons.length > 0 && (
                       <ul className="mt-1.5 space-y-0.5 pl-1">
                         {c.reasons.map((r, i) => (
-                          <li key={i} className="text-xs text-muted-foreground">
-                            · {r}
+                          <li key={i} className="flex items-start gap-1 text-xs text-muted-foreground">
+                            <span className="mt-px text-green-600 font-medium shrink-0">✓</span>
+                            {r}
                           </li>
                         ))}
                       </ul>
                     )}
+
+                    {/* Cons (eligible candidates) */}
+                    {c.isEligible && (() => {
+                      const cons: { text: string; red?: boolean }[] = [];
+                      if (c.wouldBeOvertime)
+                        cons.push({ text: `Overtime — ${c.hoursThisWeek}h this week (OT pay applies)` });
+                      if ((c.weekendsThisPeriod ?? 0) >= 3)
+                        cons.push({ text: `${c.weekendsThisPeriod} weekends already worked this period` });
+                      if ((c.consecutiveDaysBeforeShift ?? 0) >= 4)
+                        cons.push({ text: `${c.consecutiveDaysBeforeShift} consecutive days — this would be day ${(c.consecutiveDaysBeforeShift ?? 0) + 1}` });
+                      if (chargeNurseRequired && !c.isChargeNurseQualified)
+                        cons.push({ text: "Not charge nurse qualified — hard rule violation", red: true });
+                      if (cons.length === 0) return null;
+                      return (
+                        <ul className="mt-1 space-y-0.5 pl-1">
+                          {cons.map((con, i) => (
+                            <li key={i} className={`flex items-start gap-1 text-xs ${con.red ? "text-red-600" : "text-amber-600"}`}>
+                              <span className="mt-px shrink-0">✗</span>
+                              {con.text}
+                            </li>
+                          ))}
+                        </ul>
+                      );
+                    })()}
 
                     {/* Rest hours before shift */}
                     {c.isEligible && (
@@ -630,7 +662,10 @@ export default function CalloutsPage() {
                     {!c.isEligible && c.ineligibilityReasons.length > 0 && (
                       <ul className="mt-1 space-y-0.5 pl-1">
                         {c.ineligibilityReasons.map((r, i) => (
-                          <li key={i} className="text-xs text-red-600">· {r}</li>
+                          <li key={i} className="flex items-start gap-1 text-xs text-red-600">
+                            <span className="mt-px shrink-0">✗</span>
+                            {r}
+                          </li>
                         ))}
                       </ul>
                     )}

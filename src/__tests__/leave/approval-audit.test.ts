@@ -63,40 +63,44 @@ vi.mock("@/db/schema", () => ({
   staff:     { id: "staff$id", firstName: "staff$firstName", lastName: "staff$lastName" },
 }));
 
-vi.mock("@/db", () => ({
-  db: {
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          get: mockSelectGet,
-          all: mockSelectAll,
-        }),
-        all: mockSelectAll,
+vi.mock("@/db", () => {
+  // Self-referential chain so .innerJoin().innerJoin().where() works
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fromResult: any = {
+    where: () => ({ get: mockSelectGet, all: mockSelectAll }),
+    all: mockSelectAll,
+    leftJoin: () => ({
+      orderBy: () => ({ all: vi.fn(() => []) }),
+      where: () => ({ all: mockSelectAll }),
+    }),
+  };
+  fromResult.innerJoin = () => fromResult;
+  return {
+    db: {
+      select: () => ({
+        from: () => fromResult,
         leftJoin: () => ({
-          orderBy: () => ({ all: vi.fn(() => []) }),
+          where: () => ({ all: mockSelectAll }),
         }),
       }),
-      leftJoin: () => ({
-        where: () => ({ all: mockSelectAll }),
-      }),
-    }),
-    update: () => ({
-      set: () => ({
-        where: () => ({
-          returning: () => ({ get: mockUpdateRetGet }),
-          run: mockUpdateRun,
+      update: () => ({
+        set: () => ({
+          where: () => ({
+            returning: () => ({ get: mockUpdateRetGet }),
+            run: mockUpdateRun,
+          }),
         }),
       }),
-    }),
-    insert: () => ({
-      values: () => ({
-        run: mockInsertRun,
-        returning: () => ({ get: mockInsertRetGet }),
+      insert: () => ({
+        values: () => ({
+          run: mockInsertRun,
+          returning: () => ({ get: mockInsertRetGet }),
+        }),
       }),
-    }),
-    delete: () => ({ where: () => ({ run: vi.fn() }) }),
-  },
-}));
+      delete: () => ({ where: () => ({ run: vi.fn() }) }),
+    },
+  };
+});
 
 vi.mock("@/lib/coverage/find-candidates", () => ({
   findCandidatesForShift: vi.fn(async () => ({
