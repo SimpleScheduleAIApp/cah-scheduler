@@ -297,7 +297,7 @@ export default function CoverageRequestsPage() {
 
       {/* Approval Dialog with Candidate Selection */}
       <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Approve Coverage</DialogTitle>
             <DialogDescription>
@@ -378,12 +378,6 @@ export default function CoverageRequestsPage() {
                                 {reason}
                               </li>
                             ))}
-                            {candidate.isChargeNurseQualified && selectedRequest.originalWasChargeNurse && (
-                              <li className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                                <span className="mt-px shrink-0 text-green-600 font-medium">✓</span>
-                                Charge nurse qualified
-                              </li>
-                            )}
                           </ul>
                         )}
 

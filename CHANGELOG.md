@@ -6,6 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.35] - 2026-03-02
+
+### Fixed
+
+- **Coverage Requests dialog: "Charge nurse qualified" no longer appears twice for qualified candidates.**
+
+  The text was being added to `reasons[]` in `find-candidates.ts` (all three tier builders) *and* again as a hardcoded JSX bullet in `open-shifts/page.tsx`. The redundant JSX block has been removed; `reasons[]` is the single source of truth.
+
+- **Coverage Requests dialog is now scrollable.**
+
+  The `DialogContent` was missing `max-h-[85vh] overflow-y-auto`, so dialogs with many candidates or a tall charge nurse warning banner could overflow off screen with no way to scroll. The dialog now behaves identically to the Callouts replacement dialog.
+
+- **"PRN Import Template" no longer appears in the Schedule Builder.**
+
+  The archived anchor schedule (ID `00000000-0000-0000-0000-000000000001`) used as a foreign-key target for `prn_availability` records was being returned by `GET /api/schedules` alongside real schedule periods. The GET handler now filters out any schedule with `status = 'archived'`, so the synthetic anchor row is hidden from the UI without deleting the DB record (which would break PRN availability data).
+
+### Files Modified
+
+- `src/app/open-shifts/page.tsx` — removed duplicate "Charge nurse qualified" JSX bullet; added `max-h-[85vh] overflow-y-auto` to `DialogContent`
+- `src/app/api/schedules/route.ts` — GET query now excludes `status = 'archived'` rows
+
+---
+
 ## [1.4.34] - 2026-02-28
 
 ### Added

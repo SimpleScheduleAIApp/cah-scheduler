@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { schedule, shiftDefinition, shift } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { buildShiftInserts } from "@/lib/schedules/build-shifts";
 
@@ -8,6 +8,7 @@ export async function GET() {
   const schedules = db
     .select()
     .from(schedule)
+    .where(ne(schedule.status, "archived"))
     .orderBy(schedule.startDate)
     .all();
   return NextResponse.json(schedules);
