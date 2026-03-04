@@ -115,6 +115,7 @@ export function buildContext(scheduleId: string): RuleContext {
       requiredStaffCount: s.requiredStaffCount ?? def.requiredStaffCount,
       requiresChargeNurse: s.requiresChargeNurse ?? def.requiresChargeNurse,
       actualCensus: s.actualCensus,
+      censusBandId: s.censusBandId ?? null,
       unit: def.unit,
       countsTowardStaffing: def.countsTowardStaffing,
       acuityLevel: s.acuityLevel,
@@ -190,6 +191,24 @@ export function buildContext(scheduleId: string): RuleContext {
     requiredChargeNurses: b.requiredChargeNurses,
     patientToNurseRatio: b.patientToNurseRatio,
   }));
+
+  // When a census tier has been selected (censusBandId is set on a shift), override
+  // requiredStaffCount with the band's total staffing requirement so the scheduler
+  // fills to the correct target (e.g. 4 RNs + 1 CNA = 5 for Green) rather than the
+  // shift definition's base count (e.g. 4 for Day). Also zero acuityExtraStaff to
+  // prevent double-counting — the band total already includes any elevated-census extra.
+  for (const [shiftId, shiftInfo] of shiftMap) {
+    if (shiftInfo.censusBandId) {
+      const band = censusBandInfos.find((b) => b.id === shiftInfo.censusBandId);
+      if (band) {
+        shiftMap.set(shiftId, {
+          ...shiftInfo,
+          requiredStaffCount: band.requiredRNs + band.requiredCNAs,
+          acuityExtraStaff: 0,
+        });
+      }
+    }
+  }
 
   // Fetch PRN availability — load all submissions across all schedules, then
   // aggregate dates per staff. The eligibility check already gates by date, so

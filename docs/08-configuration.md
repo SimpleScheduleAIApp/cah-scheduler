@@ -205,30 +205,37 @@ Weight 0.5 = Half as important
 
 ### What Are Census Bands?
 
-Census bands define how many staff you need based on patient count.
+Census bands define how many staff you need for each **census tier**. There are four tiers — Blue, Green, Yellow, and Red — each mapped to a patient count range and a full staffing specification.
+
+### Census Tiers
+
+| Tier | Color | Meaning |
+|------|-------|---------|
+| **Blue** | 🔵 | Low occupancy — low census protocol (staff may be sent home) |
+| **Green** | 🟢 | Normal census — standard staffing |
+| **Yellow** | 🟡 | Elevated census — extra staff needed |
+| **Red** | 🔴 | Critical census — all hands on deck |
 
 ### Example Census Bands for ICU
 
-| Band Name | Patients | RNs | LPNs | CNAs | Charge | Ratio |
-|-----------|----------|-----|------|------|--------|-------|
-| Low Census | 1-3 | 1 | 0 | 0 | 1 | 2:1 |
-| Normal | 4-6 | 2 | 1 | 1 | 1 | 2:1 |
-| High | 7-9 | 3 | 1 | 1 | 1 | 2:1 |
-| Critical | 10-12 | 4 | 1 | 2 | 1 | 1:1 |
+| Tier | Patients | RNs | LPNs | CNAs | Charge | Ratio |
+|------|----------|-----|------|------|--------|-------|
+| 🔵 Blue (Low Census) | 1–4 | 2 | 0 | 1 | 1 | 2:1 |
+| 🟢 Green (Normal) | 5–8 | 3 | 1 | 1 | 1 | 2:1 |
+| 🟡 Yellow (High) | 9–10 | 4 | 1 | 2 | 1 | 2:1 |
+| 🔴 Red (Critical) | 11–12 | 5 | 1 | 2 | 1 | 2:1 |
 
 ### How It Works
 
-1. **Check census** - How many patients do we have?
-2. **Find band** - Which band applies?
-3. **Set requirements** - Schedule that many staff
+1. **Nurse manager opens the Daily Census page** at the start of each shift.
+2. **Selects the tier** (🔵 / 🟢 / 🟡 / 🔴) for each shift that day.
+3. **Staffing requirements update automatically** based on the tier's census band.
 
 ### Configuring Census Bands
 
-For each band, you specify:
-- Patient range (min - max)
-- Required RNs
-- Required LPNs
-- Required CNAs
+Go to **Rules → Census Bands** to edit each tier's staffing specification:
+- Patient range (min – max)
+- Required RNs, LPNs, CNAs
 - Required Charge Nurses
 - Patient-to-nurse ratio
 

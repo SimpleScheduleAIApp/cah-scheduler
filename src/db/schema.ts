@@ -315,6 +315,9 @@ export const censusBand = sqliteTable(
     patientToNurseRatio: text("patient_to_nurse_ratio")
       .notNull()
       .default("2:1"),
+    color: text("color", { enum: ["blue", "green", "yellow", "red"] })
+      .notNull()
+      .default("green"),
     isActive: integer("is_active", { mode: "boolean" }).notNull().default(true),
     createdAt: text("created_at")
       .notNull()
@@ -419,9 +422,9 @@ export const shift = sqliteTable(
     }),
     actualCensus: integer("actual_census"),
     censusBandId: text("census_band_id").references(() => censusBand.id),
-    // Acuity level set by CNO/Manager
+    // Census tier set by CNO/Manager (blue=low, green=normal, yellow=elevated, red=critical)
     acuityLevel: text("acuity_level", {
-      enum: ["green", "yellow", "red"],
+      enum: ["blue", "green", "yellow", "red"],
     }),
     // Extra staff needed due to acuity (calculated from unit config)
     acuityExtraStaff: integer("acuity_extra_staff").default(0),

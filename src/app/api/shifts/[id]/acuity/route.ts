@@ -25,7 +25,13 @@ export async function POST(
 
   if (body.acuityLevel !== undefined) {
     updateData.acuityLevel = body.acuityLevel;
-    updateData.acuityExtraStaff = body.acuityExtraStaff ?? 0;
+    // When a census tier is set via censusBandId, the band's staffing spec is absolute —
+    // clear the extra-staff modifier to prevent double-counting.
+    updateData.acuityExtraStaff = body.censusBandId ? 0 : (body.acuityExtraStaff ?? 0);
+  }
+
+  if (body.censusBandId !== undefined) {
+    updateData.censusBandId = body.censusBandId;
   }
 
   if (body.sitterCount !== undefined) {
@@ -43,16 +49,16 @@ export async function POST(
     .returning()
     .get();
 
-  // Log acuity change
+  // Log census tier / acuity change
   if (body.acuityLevel !== undefined && existing.acuityLevel !== body.acuityLevel) {
     db.insert(exceptionLog)
       .values({
         entityType: "shift",
         entityId: id,
         action: "acuity_changed",
-        description: `Acuity changed from ${existing.acuityLevel || "none"} to ${body.acuityLevel} for shift on ${existing.date}`,
-        previousState: { acuityLevel: existing.acuityLevel },
-        newState: { acuityLevel: body.acuityLevel, extraStaff: body.acuityExtraStaff },
+        description: `Census tier changed from ${existing.acuityLevel || "none"} to ${body.acuityLevel} for shift on ${existing.date}`,
+        previousState: { acuityLevel: existing.acuityLevel, censusBandId: existing.censusBandId },
+        newState: { acuityLevel: body.acuityLevel, censusBandId: body.censusBandId },
         performedBy: body.performedBy || "nurse_manager",
       })
       .run();

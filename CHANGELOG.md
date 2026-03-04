@@ -6,6 +6,274 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.7] - 2026-03-04
+
+### Fixed
+
+- **On-leave staff shown as active in schedule grid** (`src/components/schedule/schedule-grid.tsx`).
+
+  When a staff member's leave was approved, the system correctly cancelled their assignments (`status = "cancelled"`). However, the schedule grid rendered cancelled assignments identically to active ones and included them in the staffing count — causing a shift to display "5/5 staff" (full) even though one person was on approved leave. The rule engine correctly fired a hard violation, but the full count masked the understaffing.
+
+  Root cause: the `ShiftAssignment` TypeScript interface had no `status` field, and `staffCount` was computed as `shift.assignments.length` (all statuses). The API already returned `status` in every assignment object; the grid simply wasn't using it.
+
+  Changes:
+  - Added `status: string` to the `ShiftAssignment` interface.
+  - `staffCount` and `hasCharge` now computed from active-only assignments (`status !== "cancelled"`).
+  - Cancelled assignments are rendered below active ones with a strikethrough name, orange dot, and "Leave" badge.
+  - "No staff assigned" empty-state only shown when there are no assignments of any status.
+
+### Files Modified
+
+- `src/components/schedule/schedule-grid.tsx` — `status` field added to type; count and charge-nurse detection use active assignments only; on-leave visual indicator
+
+---
+
+## [1.5.6] - 2026-03-04
+
+### Added
+
+- **`checkForUnexplainedUnderstaffing` validation utility** (`src/lib/engine/scheduler/validate-output.ts`).
+
+  New pure function that scans the scheduler's `understaffed` output for shifts where:
+  - No hard-rule rejection reasons were recorded, AND
+  - Enough potentially available staff (active, not on leave, PRN with availability) existed to fill the shift.
+
+  A non-empty result is a signal of a scheduler logic bug — the scheduler stopped filling a shift without a documented reason despite having sufficient staff. The v1.5.5 bug (requiredStaffCount mismatch) would have been caught by this check at generation time.
+
+- **Integration test: census-band-aware scheduler output** (`src/__tests__/integration/scheduler-output.test.ts`).
+
+  15 new tests across two describe blocks:
+  - Unit tests for `checkForUnexplainedUnderstaffing` covering all branches: documented reasons, genuine shortage, leave-blocked staff, PRN without availability, inactive staff, and the suspicious (bug-signal) path.
+  - Full pipeline test with a 25-staff / 7-day / 14-shift ICU fixture where each shift uses `requiredStaffCount = 5` (Green band: 4 RNs + 1 CNA) and `requiresChargeNurse = true`. Verifies full coverage, charge nurse assignment, no overlapping shifts, local-search preservation, and a named regression test for the v1.5.5 bug.
+
+- **Runtime audit check in `runner.ts`**: after generating the Balanced schedule, calls `checkForUnexplainedUnderstaffing` and records `suspiciousUnderstaffingCount` and `suspiciousUnderstaffing` in the audit log's `newState`. A count of 0 means the scheduler is working correctly; a non-zero count flags a logic issue for investigation.
+
+- **Tests run as part of `npm run build`**: `package.json` build script updated to `npm run test && npm run db:push && npm run db:seed && next build`. A failing test now blocks the build, preventing broken scheduler logic from shipping.
+
+### Fixed
+
+- **Seed FK delete order** (`src/db/seed.ts`): `open_shift.filledByAssignmentId` and `open_shift.originalStaffId` have no `ON DELETE CASCADE`. If a user used the Open Shifts feature before running a build, those rows blocked `DELETE FROM assignment`, causing `FOREIGN KEY constraint failed` in the seed. Added explicit `DELETE FROM open_shift`, `DELETE FROM generation_job`, and `DELETE FROM staff_holiday_assignment` in the correct order before their parent tables.
+
+- **Stale `patient-ratio` tests** (`src/__tests__/rules/patient-ratio.test.ts`): two tests still expected the pre-v1.5.1 RN+LPN counting behaviour. Updated to reflect the current RN-only AACN standard: "flags when there are patients but no RNs assigned" (corrected message) and "does NOT count LPNs toward the RN ratio" (corrected assertion).
+
+### Files Modified
+
+- `src/lib/engine/scheduler/validate-output.ts` — new file
+- `src/__tests__/integration/scheduler-output.test.ts` — new file
+- `src/lib/engine/scheduler/runner.ts` — import and call `checkForUnexplainedUnderstaffing`; include in audit `newState`
+- `package.json` — `build` script prepends `npm run test &&`
+- `src/db/seed.ts` — FK-safe delete order with missing tables added
+- `src/__tests__/rules/patient-ratio.test.ts` — stale test assertions corrected
+
+---
+
+## [1.5.5] - 2026-03-04
+
+### Fixed
+
+- **Auto-scheduler now fills shifts to the census-band-aware required count.**
+
+  The scheduler was filling Day shifts to 4 and Night shifts to 3 even when the Green census tier
+  (4 RNs + 1 CNA = 5 total) was applied. The root cause: `greedy.ts` and `repair.ts` both compute
+  `required = shift.requiredStaffCount + shift.acuityExtraStaff`. When a `censusBandId` is set, the
+  acuity API correctly zeroes `acuityExtraStaff` to prevent double-counting, but `requiredStaffCount`
+  remained the shift definition's base count (4 for Day, 3 for Night) — not the census band total.
+
+  Fix: `buildContext` in `rule-engine.ts` now adds a pass after loading census bands. For every shift
+  that has a `censusBandId` set, it overrides `requiredStaffCount` with `band.requiredRNs + band.requiredCNAs`
+  and clears `acuityExtraStaff` to 0. This keeps the fix entirely in one place and ensures the
+  scheduler, repair phase, and rule engine all see a consistent, census-aware required count.
+
+  The display API already computed this correctly via `getEffectiveRequired()`. The grid now shows
+  the same required count that the scheduler targets (e.g. "5/5" when staffed for Green, "3/5" when
+  understaffed), eliminating the false "4/4 — fully staffed" display that hid real violations.
+
+### Files Modified
+
+- `src/lib/engine/rule-engine.ts` — `buildContext` overrides `requiredStaffCount` from census band when `censusBandId` is set
+
+---
+
+## [1.5.4] - 2026-03-04
+
+### Fixed
+
+- **Excel import no longer destroys census tier colors.**
+
+  Importing an Excel file deleted all census bands and recreated them without the `color` field, causing every band to fall back to the schema default `"green"`. This meant all tiers displayed as "Green — Normal" regardless of the actual tier and the census tier system stopped working after any import.
+
+  Fixes applied:
+  - `createDefaultCensusBands` (fallback when no Census Bands sheet is provided) now explicitly sets `color` for each of the four default bands: `blue`, `green`, `yellow`, `red`.
+  - When a Census Bands sheet is present but rows have no Color column, colors are derived automatically by sorting each unit's bands by `minPatients` and assigning `blue → green → yellow → red` in order.
+  - The export (`GET /api/import`) now includes a "Color" column in the Census Bands sheet so round-trip import/export preserves colors.
+  - The Excel template now includes a Census Bands sheet with the Color column and four example rows.
+  - The Excel parser (`parseCensusBandsSheet`) now reads the "Color" or "Tier" column and stores it in `CensusBandImport`.
+
+- **Newly created schedules now start with Green tier on every shift.**
+
+  Schedule creation (`POST /api/schedules`) built shift instances with `acuityLevel = null` and `censusBandId = null`. Because the `getEffectiveRequired` fallback Priority 2 requires `acuityLevel` to be non-null, all new shifts fell through to `baseRequired` regardless of census tier settings. The schedule API now looks up the Green census band for the unit and seeds every new shift with `acuityLevel = "green"` and `censusBandId` pointing to the Green band. This ensures the grid always shows census-aware required counts, and the manager only needs to change tiers that deviate from normal on the Census page.
+
+### Files Modified
+
+- `src/lib/import/parse-excel.ts` — `CensusBandImport` gains `color?` field; `parseCensusBandsSheet` reads Color/Tier column; `generateTemplate` adds Census Bands sheet
+- `src/app/api/import/route.ts` — `createDefaultCensusBands` sets explicit colors; `importData` derives and persists color on census band insert; `exportCurrentData` includes Color column
+- `src/lib/schedules/build-shifts.ts` — `ShiftInsertValues` gains `acuityLevel` and `censusBandId`; `buildShiftInserts` accepts and propagates default tier
+- `src/app/api/schedules/route.ts` — looks up Green band for the unit and passes it to `buildShiftInserts`
+
+---
+
+## [1.5.3] - 2026-03-04
+
+### Fixed
+
+- **Schedule grid now correctly shows required count from census tier for all shifts.**
+
+  Two bugs prevented the v1.5.2 `getEffectiveRequired` fix from working in practice:
+
+  1. **Seed data had no `censusBandId`** — every shift created by `db:seed` had `censusBandId = null`. With no band ID stored, the lookup fell through to `actualCensus` (which matched the Green band, not the actual acuity set on the shift), causing the grid to show the wrong required count.
+
+  2. **No `acuityLevel + unit` fallback** — even when a user saves a census tier through the Census page (which correctly writes `censusBandId`), a subsequent `npm run build` re-seeds the database with new UUIDs for census bands, making the stored `censusBandId` stale and the lookup would silently fail.
+
+  The schedule grid now uses a three-priority lookup in `getEffectiveRequired`:
+  - **Priority 1:** Direct `censusBandId` ID lookup (correct under normal conditions)
+  - **Priority 2:** `acuityLevel + unit` color match — e.g. "yellow" + "ICU" → finds the Yellow ICU band regardless of UUID stability. Handles stale IDs and seeded shifts.
+  - **Priority 3:** `actualCensus` numeric range lookup (legacy path — keeps `Math.max` so base is floor)
+
+  Blue and Yellow tier selections no longer apply `Math.max` against the base required count, so Blue can legitimately reduce staffing below the shift definition default (low census = send staff home).
+
+### Files Modified
+
+- `src/db/seed.ts` — build `bandIdByColor` map after creating census bands; seeded shifts now include `censusBandId`
+- `src/app/api/schedules/[id]/route.ts` — add `defUnit` to shifts query; `getEffectiveRequired` updated with `acuityLevel + unit` fallback
+
+---
+
+## [1.5.2] - 2026-03-03
+
+### Fixed
+
+- **Census page: unset shifts now default to Green tier on page load.**
+
+  Shifts with no acuityLevel previously showed "Select tier…" in the dropdown, requiring the manager to explicitly select Green even when nothing had changed from the normal baseline. The page now pre-populates `pending` with Green for every unset shift as soon as both shifts and bands have loaded. The manager can still change the tier before saving; only the initial blank is filled in.
+
+- **Band Thresholds tab: tier color labels and dots now display correctly.**
+
+  The Tier column on both the Census page Band Thresholds tab and the Rules → Census Bands tab was showing the raw database band name ("Low Census", "Normal Census", etc.) and all dots appeared green. The column now derives the label from the tier color ("Blue — Low Census", "Green — Normal", "Yellow — Elevated", "Red — Critical") and the dot color correctly reflects the tier (blue, green, yellow, red).
+
+- **Schedule grid now reflects census tier staffing requirement.**
+
+  Selecting a tier on the Census page writes `censusBandId` to the shift but leaves `actualCensus` as null. The `getEffectiveRequired()` helper in the schedule detail API previously only checked `actualCensus` for a band match, so it fell back to the shift definition's base count — making the shift appear fully staffed even when the selected tier required more people. The function now checks `censusBandId` first (direct tier lookup by ID, no `Math.max` so Blue low-census can correctly require fewer staff than the base), then falls back to `actualCensus` for the legacy numeric path.
+
+### Files Modified
+
+- `src/app/census/page.tsx` — Green-default useEffect; tier color labels in Band Thresholds tab
+- `src/app/rules/page.tsx` — `CENSUS_TIER_LABEL` constant; tier color labels in Census Bands tab
+- `src/app/api/schedules/[id]/route.ts` — `getEffectiveRequired` checks `censusBandId` first
+
+---
+
+## [1.5.1] - 2026-03-03
+
+### Fixed
+
+- **Patient-to-nurse ratio rule corrected to RN-only counting.**
+
+  The rule previously counted both RNs and LPNs as "licensed staff" when evaluating the 2:1 ICU nurse:patient ratio. Per AACN standards and state law, the ICU ratio is specifically RN-to-patient: LPNs cannot perform IV push medications, patient admissions, or blood administration in ICU settings and cannot substitute for RNs in the clinical ratio. The rule now counts RNs only. LPNs assigned to a shift still count toward total headcount (min-staff rule) but no longer inflate the ratio denominator.
+
+- **ICU census band staffing numbers corrected for strict 2:1 RN:patient ratio.**
+
+  The previous Green band required 3 RNs for up to 8 patients (8 ÷ 3 = 2.67:1 — a ratio violation). All tier RN counts have been increased so that the `requiredRNs` value alone satisfies the 2:1 standard at the peak patient count for each tier:
+
+  | Tier   | Patient Range | RNs (before) | RNs (after) | Ratio at peak |
+  |--------|---------------|--------------|-------------|---------------|
+  | Blue   | 1 – 4 pts     | 2            | 2           | 4 ÷ 2 = 2:1 ✓ |
+  | Green  | 5 – 8 pts     | 3            | **4**       | 8 ÷ 4 = 2:1 ✓ |
+  | Yellow | 9 – 10 pts    | 4            | **5**       | 10 ÷ 5 = 2:1 ✓ |
+  | Red    | 11 – 12 pts   | 5            | **6**       | 12 ÷ 6 = 2:1 ✓ |
+
+  `requiredLPNs` set to 0 for all ICU bands — ICU scope-of-practice does not include LPN staffing targets.
+
+### Added
+
+- **Census Bands are now inline-editable on the Rules page.**
+
+  The Rules → Census Bands tab previously showed a read-only table. Each row now has an **Edit** button that switches the row to inline inputs for `minPatients`, `maxPatients`, `requiredRNs`, `requiredLPNs`, `requiredCNAs`, `requiredChargeNurses`, and `patientToNurseRatio`. Saving calls the existing `PUT /api/census-bands` endpoint and refreshes the row without a page reload. Only one row is editable at a time.
+
+### Changed
+
+- **"Charge Nurses" column now labeled "(in RN count)"** on both the Rules → Census Bands tab and the Census page Band Thresholds tab. The charge nurse is one of the RNs — not a separate additional person — and the previous column header was misleading.
+
+### Files Modified
+
+- `src/lib/engine/rules/patient-ratio.ts` — RN-only ratio counting; updated rule name and comments
+- `src/db/seed.ts` — corrected ICU census band RN counts; `requiredLPNs` = 0; updated rule description
+- `src/app/rules/page.tsx` — inline editing for Census Bands rows; `requiredLPNs` column; Charge note
+- `src/app/census/page.tsx` — Charge Nurses column clarification note
+- `RULES_SPECIFICATION.md` — §3.3 updated; document version bumped to 1.5.1
+
+---
+
+## [1.5.0] - 2026-03-03
+
+### Added
+
+- **Daily Census Management page (`/census`) with a 4-tier Blue / Green / Yellow / Red color system.**
+
+  Patient census was previously entered as a raw number inside the individual shift assignment dialog, forcing the nurse manager to open each shift separately. This has been replaced with a dedicated Census page accessible from the sidebar.
+
+  **Tab 1 — Daily Census:** The manager selects a date (with prev/next navigation), sees all shifts for that day, and picks a census tier from a color-coded dropdown. Saving writes both `acuityLevel` and `censusBandId` to every affected shift in a single batch — one page, one save, all shifts for the day.
+
+  **Tab 2 — Band Thresholds:** A read-only reference table showing the patient ranges and staffing requirements for each census tier per unit. Links to Rules → Census Bands for editing.
+
+- **4 census tiers unified with the census band configuration.**
+
+  The four existing census bands (Low, Normal, High, Critical) now each carry a `color` field (`blue`, `green`, `yellow`, `red`). This links the operationally meaningful color tier to the staffing-requirements record in a single lookup, eliminating the two-step count → band → staffing chain.
+
+  | Tier   | Meaning                | Triggers                        |
+  |--------|------------------------|---------------------------------|
+  | 🔵 Blue  | Low occupancy          | Low census protocol (send home) |
+  | 🟢 Green | Normal census          | Standard staffing               |
+  | 🟡 Yellow| Elevated census        | Call in extra staff             |
+  | 🔴 Red   | Critical census        | All hands on deck               |
+
+- **Rules → Census Bands tab now shows color dots** next to each band name (🔵🟢🟡🔴) for quick visual identification.
+
+- **New API endpoint `GET /api/census?date=YYYY-MM-DD`** returns all shifts for a given date joined with their shift definition (name, type, unit, start/end time, current tier).
+
+### Changed
+
+- **Assignment dialog: patient census input removed; replaced with a read-only census tier badge.**
+
+  The per-shift number input ("Enter patient count" / Update button) has been removed. When a census tier has been set on the Census page, the assignment dialog now shows a small color-coded badge (e.g., "🟡 Elevated") with a link to the Census page. If no tier is set the badge is omitted.
+
+- **Rule engine: `min-staff` now uses `censusBandId` directly when set.**
+
+  Previously the minimum-staffing rule looked up the census band by matching `actualCensus` against patient-count ranges. When a tier is selected from the Census page, `censusBandId` is set on the shift. The rule now prefers a direct ID lookup, which is faster and avoids edge-case mismatches at band boundaries. The legacy count-range lookup is retained as a fallback for shifts that only have `actualCensus` set.
+
+- **Acuity extra-staff modifier zeroed when `censusBandId` is set.**
+
+  Each census band's staffing spec is now absolute (requiredRNs + requiredCNAs define the total). Setting `censusBandId` clears `acuityExtraStaff` to 0 in the `POST /api/shifts/[id]/acuity` handler to prevent double-counting with the unit-level `acuityYellowExtraStaff` / `acuityRedExtraStaff` modifiers.
+
+### Files Modified
+
+- `src/db/schema.ts` — `color` column added to `censusBand` table; `shift.acuityLevel` enum extended to include `"blue"`
+- `src/db/seed.ts` — census band inserts now include `color` field
+- `src/app/api/census/route.ts` — **NEW** — `GET /api/census?date=` endpoint
+- `src/app/api/census-bands/route.ts` — `color` included in POST and PUT body handling
+- `src/app/api/shifts/[id]/acuity/route.ts` — accepts `censusBandId`; zeroes `acuityExtraStaff` when band is set
+- `src/app/census/page.tsx` — **NEW** — Daily Census page (2 tabs)
+- `src/components/layout/sidebar.tsx` — Census nav item added (Activity icon)
+- `src/components/schedule/assignment-dialog.tsx` — census input removed; read-only tier badge added; `onCensusChange` prop removed
+- `src/components/schedule/schedule-grid.tsx` — `acuityLevel` added to `ShiftData` interface
+- `src/components/schedule/shift-violations-modal.tsx` — `acuityLevel` added to `ShiftData` interface
+- `src/app/schedule/[id]/page.tsx` — `acuityLevel` added to `ShiftData`; `handleCensusChange` and `onCensusChange` prop removed
+- `src/lib/engine/rules/types.ts` — `censusBandId` added to `ShiftInfo`
+- `src/lib/engine/rule-engine.ts` — `censusBandId` passed when building `ShiftInfo`
+- `src/lib/engine/rules/min-staff.ts` — direct `censusBandId` lookup takes priority over count-range fallback
+- `src/app/rules/page.tsx` — color dot badge added to Census Bands tab
+
+---
+
 ## [1.4.35] - 2026-03-02
 
 ### Fixed

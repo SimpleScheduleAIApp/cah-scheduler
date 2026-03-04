@@ -80,16 +80,18 @@ Most hospitals create schedules in **6-week cycles**. Here's how it typically wo
 
 The number of staff you need depends on **how many patients you have**. This seems obvious, but the mechanics are important.
 
-### Census Bands
+### Census Tiers
 
-Hospitals define "census bands" - ranges of patient counts that determine staffing:
+CAH Scheduler uses four color-coded **census tiers**. The nurse manager selects the appropriate tier on the **Census page** at the start of each shift, and the system automatically enforces the correct staffing requirements:
 
-| Census Band | Patient Count | RNs Needed | CNAs Needed |
-|-------------|---------------|------------|-------------|
-| Low         | 1-3 patients  | 1          | 0           |
-| Normal      | 4-6 patients  | 2          | 1           |
-| High        | 7-9 patients  | 3          | 1           |
-| Critical    | 10-12 patients| 4          | 2           |
+| Tier | Color | Meaning | Staffing Effect |
+|------|-------|---------|-----------------|
+| Blue | 🔵 | Low occupancy | Low census protocol — some staff may be sent home |
+| Green | 🟢 | Normal census | Standard staffing applies |
+| Yellow | 🟡 | Elevated census | Extra staff need to be called in |
+| Red | 🔴 | Critical census | All hands on deck |
+
+Each tier is backed by a **census band** record that specifies exactly how many RNs, LPNs, and CNAs are required. These thresholds are configured under **Rules → Census Bands**.
 
 ### Patient-to-Nurse Ratios
 
@@ -115,12 +117,14 @@ Even with the same number of patients, workload can vary dramatically:
 | Routine medications | Constant monitoring |
 | Normal staffing | Need extra help! |
 
-The scheduler tracks acuity levels:
-- **Green** = Normal, standard staffing
-- **Yellow** = Elevated, need 1 extra staff
-- **Red** = Critical, need 2 extra staff
+In CAH Scheduler, acuity is captured through the **census tier** system. The nurse manager visits the **Census page** at the start of each shift and selects a color tier that reflects both patient count and acuity:
 
-The charge nurse or manager sets this each shift based on what they're seeing.
+- 🔵 **Blue** = Low occupancy — may send staff home
+- 🟢 **Green** = Normal — standard staffing
+- 🟡 **Yellow** = Elevated — call in extra staff
+- 🔴 **Red** = Critical — all hands on deck
+
+The selected tier's census band defines the exact staffing requirement for that shift.
 
 ---
 

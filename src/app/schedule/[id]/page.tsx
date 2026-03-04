@@ -13,6 +13,7 @@ import { format, parseISO } from "date-fns";
 interface ShiftAssignment {
   id: string;
   staffId: string;
+  status: string;
   isChargeNurse: boolean;
   isOvertime: boolean;
   staffFirstName: string;
@@ -29,6 +30,7 @@ interface ShiftData {
   requiredStaffCount: number;
   requiresChargeNurse: boolean;
   actualCensus: number | null;
+  acuityLevel: "blue" | "green" | "yellow" | "red" | null;
   assignments: ShiftAssignment[];
 }
 
@@ -118,15 +120,6 @@ export default function ScheduleBuilderPage() {
     );
     setDialogOpen(false);
     setSelectedShift(null);
-    fetchSchedule();
-  }
-
-  async function handleCensusChange(shiftId: string, census: number | null) {
-    await fetch(`/api/shifts/${shiftId}/acuity`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ actualCensus: census }),
-    });
     fetchSchedule();
   }
 
@@ -431,7 +424,6 @@ export default function ScheduleBuilderPage() {
         scheduleId={scheduleId}
         onAssign={handleAssign}
         onRemove={handleRemove}
-        onCensusChange={handleCensusChange}
       />
 
       {/* Shift violations modal */}

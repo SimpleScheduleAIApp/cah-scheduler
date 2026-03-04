@@ -28,6 +28,7 @@ interface ShiftData {
   requiredStaffCount: number;
   requiresChargeNurse: boolean;
   actualCensus: number | null;
+  acuityLevel?: "blue" | "green" | "yellow" | "red" | null;
 }
 
 interface ShiftViolationsModalProps {

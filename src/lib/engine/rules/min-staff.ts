@@ -15,8 +15,16 @@ export const minStaffRule: RuleEvaluator = {
 
       let requiredCount = shift.requiredStaffCount;
 
-      // If census data is available, use census band requirements
-      if (shift.actualCensus !== null) {
+      // If a census tier was selected via the Census page, use that band's absolute
+      // staffing spec directly. This prevents double-counting with acuityExtraStaff
+      // (which is zeroed out when censusBandId is set by the acuity API).
+      if (shift.censusBandId) {
+        const band = context.censusBands.find((b) => b.id === shift.censusBandId);
+        if (band) {
+          requiredCount = band.requiredRNs + band.requiredCNAs;
+        }
+      } else if (shift.actualCensus !== null) {
+        // Legacy path: look up band by patient count range
         const band = context.censusBands.find(
           (b) =>
             shift.actualCensus! >= b.minPatients &&

@@ -61,6 +61,7 @@ export interface ShiftInfo {
   requiredStaffCount: number;
   requiresChargeNurse: boolean;
   actualCensus: number | null;
+  censusBandId: string | null;
   unit: string;
   countsTowardStaffing: boolean;
   acuityLevel: string | null;

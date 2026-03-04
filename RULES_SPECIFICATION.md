@@ -1,7 +1,7 @@
 # CAH Scheduler - Complete Rules Specification
 
-**Document Version:** 1.4.15
-**Last Updated:** February 23, 2026 (v1.4.15)
+**Document Version:** 1.5.1
+**Last Updated:** March 3, 2026 (v1.5.1)
 **Purpose:** This document describes all scheduling rules and logic implemented in the CAH Scheduler application. Please review and mark any rules that need modification.
 
 ---
@@ -104,10 +104,13 @@ Hard rules are constraints that **cannot be broken**. The scheduler will not cre
   - **Levels 1–3** can never be assigned as charge, even if `isChargeNurseQualified` is set in the database (the flag alone is not sufficient)
 - **Applies to:** Shifts marked as `requiresChargeNurse = true`
 
-### 3.3 Patient-to-Licensed-Staff Ratio
-- **Rule:** The ratio of patients to licensed staff (RN + LPN combined) must not exceed the census band limit
-- **Example:** If census band says 2:1 ratio and there are 8 patients, you need at least 4 licensed staff (RNs + LPNs)
-- **Note:** CNAs do not count toward this ratio
+### 3.3 Patient-to-Nurse Ratio
+- **Rule:** The ratio of patients to RNs must not exceed the census band limit
+- **Standard:** 2:1 ICU standard per AACN and state law — 1 RN for every 2 patients
+- **Example:** If census band says 2:1 ratio and there are 8 patients, you need at least 4 RNs assigned
+- **LPNs:** Do NOT count toward this ratio. In ICU settings, LPNs cannot substitute for RNs (scope-of-practice restrictions: no IV push medications, no admissions, no blood administration). LPNs are support staff only.
+- **CNAs:** Do NOT count toward this ratio. CNA staffing levels are governed by the census band's `requiredCNAs` field (enforced by the min-staff rule) but are separate from the nurse:patient ratio.
+- **Note:** This rule only fires for shifts where `actualCensus` is set directly. Shifts using the census tier system (`censusBandId` set) satisfy the ratio by band construction — each tier's `requiredRNs` is sized to satisfy 2:1 at the peak patient count for that tier.
 
 ### 3.4 Minimum Rest Between Shifts
 - **Rule:** Staff must have at least **10 hours** of rest between the end of one shift and the start of the next
@@ -534,6 +537,8 @@ Please review each section and note any changes needed:
 | 1.4.13 | Feb 23, 2026 | **OT badge calendar order (§12.3):** `recomputeOvertimeFlags()` pass added after local search so the `isOvertime` flag reflects calendar order, not greedy construction order. Manual assignment API now computes `isOvertime` server-side (was always `false`). |
 | 1.4.14 | Feb 23, 2026 | **Overtime vs Extra Hours display split (§4.1):** Violations now emitted under two distinct rule names: `"Overtime"` (>40h/week, direct 1.5× payroll cost) and `"Extra Hours Above FTE"` (above FTE target but ≤40h, regular pay rate, scheduling preference concern). Previously both appeared as `"Overtime & Extra Hours"`, which overstated the urgency of extra-hours flags and caused the same count to appear in both cost and preference categories. |
 | 1.4.15 | Feb 23, 2026 | **Cross-schedule weekend fairness (§12.4):** Scheduler now seeds the weekend count from the prior schedule period. At context-build time, `buildContext()` queries all weekend assignments in the one-period lookback window before the new schedule starts and stores per-staff counts as `historicalWeekendCounts`. `softPenalty()` adds these to the in-schedule count before applying the bonus/penalty. Nurses who hit their quota last period start the new period "already at quota" and are deprioritised for weekend slots; nurses who were below quota get the full assignment bonus. Prevents the deterministic greedy algorithm from assigning the same nurses to weekends every period. |
+| 1.5.0 | Mar 3, 2026 | **Daily Census page (§3.1, §3.3):** Added dedicated Census Management page at `/census`. Nurse manager selects a color tier (🔵 Blue/🟢 Green/🟡 Yellow/🔴 Red) per shift instead of entering a numeric patient count. Selecting a tier sets both `acuityLevel` and `censusBandId` on the shift. The min-staff rule uses `censusBandId` for direct band lookup (priority over legacy `actualCensus` range search). `acuityExtraStaff` is zeroed when a tier is selected to prevent double-counting. Added `color` column to census_band table. Removed census input from assignment dialog; replaced with read-only tier badge. |
+| 1.5.1 | Mar 3, 2026 | **Patient ratio rule corrected to RN-only (§3.3):** The 2:1 ICU nurse:patient ratio is RN-to-patient per AACN standard. Previous implementation counted RN + LPN as "licensed staff" — corrected to count RNs only. LPNs remain assignable as support staff (count toward total headcount) but do not satisfy the RN:patient ratio. **Census band staffing numbers corrected:** ICU bands redesigned so `requiredRNs` alone satisfies strict 2:1 at the peak patient count for each tier: Blue 1–4 pts → 2 RNs; Green 5–8 pts → 4 RNs; Yellow 9–10 pts → 5 RNs; Red 11–12 pts → 6 RNs. `requiredLPNs` set to 0 for ICU (LPN scope-of-practice does not extend to ICU-level RN duties). **Census Bands now editable in UI** (Rules → Census Bands tab) — inline edit per row using existing PUT API. Charge Nurses column labelled "(in RN count)" to clarify it is not an extra headcount. |
 
 ---
 

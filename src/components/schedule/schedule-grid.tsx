@@ -6,6 +6,7 @@ import { format, parseISO } from "date-fns";
 interface ShiftAssignment {
   id: string;
   staffId: string;
+  status: string;
   isChargeNurse: boolean;
   isOvertime: boolean;
   staffFirstName: string;
@@ -22,6 +23,7 @@ interface ShiftData {
   requiredStaffCount: number;
   requiresChargeNurse: boolean;
   actualCensus: number | null;
+  acuityLevel: "blue" | "green" | "yellow" | "red" | null;
   assignments: ShiftAssignment[];
 }
 
@@ -131,9 +133,11 @@ function ShiftCell({
   violations: string[];
   softViolationCount: number;
 }) {
-  const staffCount = shift.assignments.length;
+  const activeAssignments = shift.assignments.filter((a) => a.status !== "cancelled");
+  const cancelledAssignments = shift.assignments.filter((a) => a.status === "cancelled");
+  const staffCount = activeAssignments.length;
   const isFull = staffCount >= shift.requiredStaffCount;
-  const hasCharge = shift.assignments.some((a) => a.isChargeNurse);
+  const hasCharge = activeAssignments.some((a) => a.isChargeNurse);
   const hasHardViolations = violations.length > 0;
   const hasSoftViolations = softViolationCount > 0;
 
@@ -184,7 +188,7 @@ function ShiftCell({
         </div>
       </div>
       <div className="space-y-0.5">
-        {shift.assignments.map((a) => (
+        {activeAssignments.map((a) => (
           <div key={a.id} className="flex items-center gap-1 text-xs">
             <span
               className={`inline-block h-1.5 w-1.5 rounded-full ${
@@ -204,7 +208,18 @@ function ShiftCell({
             )}
           </div>
         ))}
-        {staffCount === 0 && (
+        {cancelledAssignments.map((a) => (
+          <div key={a.id} className="flex items-center gap-1 text-xs opacity-60">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-orange-400" />
+            <span className="truncate line-through text-muted-foreground">
+              {a.staffFirstName} {a.staffLastName[0]}.
+            </span>
+            <Badge className="text-[9px] px-1 py-0 bg-orange-100 text-orange-700 border border-orange-300">
+              Leave
+            </Badge>
+          </div>
+        ))}
+        {staffCount === 0 && cancelledAssignments.length === 0 && (
           <span className="text-xs text-muted-foreground italic">
             No staff assigned
           </span>

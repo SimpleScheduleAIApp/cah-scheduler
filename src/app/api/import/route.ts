@@ -132,10 +132,10 @@ function createDefaultRules() {
 // Create default census bands for a unit
 function createDefaultCensusBands(unitName: string) {
   const censusBands = [
-    { name: "Low Census", unit: unitName, minPatients: 1, maxPatients: 4, requiredRNs: 2, requiredLPNs: 0, requiredCNAs: 1, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
-    { name: "Normal Census", unit: unitName, minPatients: 5, maxPatients: 8, requiredRNs: 3, requiredLPNs: 1, requiredCNAs: 1, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
-    { name: "High Census", unit: unitName, minPatients: 9, maxPatients: 10, requiredRNs: 4, requiredLPNs: 1, requiredCNAs: 2, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
-    { name: "Critical Census", unit: unitName, minPatients: 11, maxPatients: 12, requiredRNs: 5, requiredLPNs: 1, requiredCNAs: 2, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
+    { name: "Low Census",      color: "blue"   as const, unit: unitName, minPatients: 1,  maxPatients: 4,  requiredRNs: 2, requiredLPNs: 0, requiredCNAs: 0, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
+    { name: "Normal Census",   color: "green"  as const, unit: unitName, minPatients: 5,  maxPatients: 8,  requiredRNs: 4, requiredLPNs: 0, requiredCNAs: 0, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
+    { name: "High Census",     color: "yellow" as const, unit: unitName, minPatients: 9,  maxPatients: 10, requiredRNs: 5, requiredLPNs: 0, requiredCNAs: 0, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
+    { name: "Critical Census", color: "red"    as const, unit: unitName, minPatients: 11, maxPatients: 12, requiredRNs: 6, requiredLPNs: 0, requiredCNAs: 0, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
   ];
 
   for (const cb of censusBands) {
@@ -259,11 +259,28 @@ function importData(data: ImportResult) {
 
   // 6. Import census bands or create defaults
   if (data.censusBands && data.censusBands.length > 0) {
+    // If any band is missing a color, derive colors within each unit by
+    // sorting bands by minPatients and assigning blue→green→yellow→red in order.
+    const TIER_COLORS = ["blue", "green", "yellow", "red"] as const;
+    const bandsByUnit = new Map<string, typeof data.censusBands>();
+    for (const cb of data.censusBands) {
+      const list = bandsByUnit.get(cb.unit) ?? [];
+      list.push(cb);
+      bandsByUnit.set(cb.unit, list);
+    }
+    for (const unitBands of bandsByUnit.values()) {
+      unitBands.sort((a, b) => a.minPatients - b.minPatients);
+      unitBands.forEach((band, i) => {
+        if (!band.color && i < TIER_COLORS.length) band.color = TIER_COLORS[i];
+      });
+    }
+
     // Import from Excel
     for (const cb of data.censusBands) {
       db.insert(schema.censusBand).values({
         name: cb.name,
         unit: cb.unit,
+        color: cb.color ?? "green",
         minPatients: cb.minPatients,
         maxPatients: cb.maxPatients,
         requiredRNs: cb.requiredRNs,
@@ -546,6 +563,7 @@ function exportCurrentData(): ArrayBuffer {
   const censusBandsHeaders = [
     "Name",
     "Unit",
+    "Color",
     "Min Patients",
     "Max Patients",
     "Required RNs",
@@ -558,6 +576,7 @@ function exportCurrentData(): ArrayBuffer {
   const censusBandsRows = censusBandsData.map((cb) => [
     cb.name,
     cb.unit,
+    cb.color,
     cb.minPatients,
     cb.maxPatients,
     cb.requiredRNs,

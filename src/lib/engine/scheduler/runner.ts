@@ -11,6 +11,7 @@ import { eq, and } from "drizzle-orm";
 import { generateSchedule, buildSchedulerContext, BALANCED, FAIR, COST_OPTIMIZED } from "./index";
 import { mulberry32 } from "./local-search";
 import { evaluateSchedule } from "@/lib/engine/rule-engine";
+import { checkForUnexplainedUnderstaffing } from "./validate-output";
 import type { AssignmentDraft, UnderstaffedShift, SchedulerContext } from "./types";
 
 // ─── Holiday grouping (mirrors weekend-holiday-fairness rule) ────────────────
@@ -341,6 +342,11 @@ export async function runGenerationJob(jobId: string, scheduleId: string): Promi
     // ── 6. Audit log entries (one per variant) ────────────────────────────
     setProgress(jobId, 92, "Writing audit log");
 
+    // Check for unexplained understaffing in the Balanced result: shifts that are
+    // short without any documented hard-rule reason AND despite enough available staff.
+    // A non-empty list indicates a scheduler logic bug (not a constraint or shortage issue).
+    const suspicious = checkForUnexplainedUnderstaffing(balancedResult.understaffed, context);
+
     const now = new Date().toISOString();
 
     db.insert(exceptionLog)
@@ -350,7 +356,8 @@ export async function runGenerationJob(jobId: string, scheduleId: string): Promi
         action: "schedule_auto_generated",
         description: `Balanced schedule auto-generated: ${balancedResult.assignments.length} assignments, ` +
           `${balancedResult.understaffed.length} understaffed shifts, ` +
-          `${balancedEval.hardViolations.length} hard violations`,
+          `${balancedEval.hardViolations.length} hard violations` +
+          (suspicious.length > 0 ? `, ${suspicious.length} SUSPICIOUS understaffed (possible scheduler bug — check suspiciousUnderstaffing in newState)` : ""),
         newState: {
           variant: "balanced",
           assignmentCount: balancedResult.assignments.length,
@@ -358,6 +365,11 @@ export async function runGenerationJob(jobId: string, scheduleId: string): Promi
           scores: balancedScore,
           baseSeed,
           seed: balancedSeed,
+          // Empty array = scheduler is working correctly.
+          // Non-empty = shifts were under-filled without a documented reason despite
+          // having enough staff — investigate validate-output.ts for the root cause.
+          suspiciousUnderstaffingCount: suspicious.length,
+          suspiciousUnderstaffing: suspicious.length > 0 ? suspicious : [],
         },
         performedBy: "system",
         createdAt: now,

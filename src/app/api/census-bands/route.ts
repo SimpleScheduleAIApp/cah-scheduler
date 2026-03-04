@@ -20,6 +20,7 @@ export async function POST(request: Request) {
     .values({
       name: body.name,
       unit: body.unit ?? "ICU",
+      color: body.color ?? "green",
       minPatients: body.minPatients,
       maxPatients: body.maxPatients,
       requiredRNs: body.requiredRNs,
@@ -45,6 +46,7 @@ export async function PUT(request: Request) {
     .update(censusBand)
     .set({
       name: body.name,
+      color: body.color,
       minPatients: body.minPatients,
       maxPatients: body.maxPatients,
       requiredRNs: body.requiredRNs,

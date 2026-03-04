@@ -50,6 +50,7 @@ export interface HolidayImport {
 export interface CensusBandImport {
   name: string;
   unit: string;
+  color?: "blue" | "green" | "yellow" | "red";
   minPatients: number;
   maxPatients: number;
   requiredRNs: number;
@@ -419,6 +420,9 @@ function parseCensusBandsSheet(
 
     const name = String(row["Name"] ?? row["name"] ?? row["Band Name"] ?? "").trim();
     const unit = String(row["Unit"] ?? row["unit"] ?? "ICU").trim();
+    const colorRaw = String(row["Color"] ?? row["Tier"] ?? row["color"] ?? row["tier"] ?? "").toLowerCase().trim();
+    const VALID_COLORS = ["blue", "green", "yellow", "red"];
+    const color = VALID_COLORS.includes(colorRaw) ? colorRaw as "blue" | "green" | "yellow" | "red" : undefined;
     const minPatients = parseNumber(row["Min Patients"] ?? row["MinPatients"] ?? row["min_patients"], 0);
     const maxPatients = parseNumber(row["Max Patients"] ?? row["MaxPatients"] ?? row["max_patients"], 0);
     const requiredRNs = parseNumber(row["Required RNs"] ?? row["RequiredRNs"] ?? row["required_rns"], 1);
@@ -444,6 +448,7 @@ function parseCensusBandsSheet(
     bands.push({
       name,
       unit,
+      color,
       minPatients,
       maxPatients,
       requiredRNs,
@@ -612,57 +617,46 @@ export function generateTemplate(): ArrayBuffer {
     "Avoid Weekends",
     "PRN Available Days",
   ];
-  // Full-time example — PRN Available Days left blank (not applicable)
-  const staffExampleFT = [
-    "Maria",
-    "Garcia",
-    "RN",
-    "full_time",
-    "1.0",
-    "ICU",
-    "ER, Med-Surg",
-    "4",
-    "Yes",
-    "5",
-    "maria.garcia@hospital.com",
-    "555-0101",
-    "2020-01-15",
-    "No",
-    "No",
-    "Senior charge nurse",
-    "day",
-    "Saturday, Sunday",
-    "4",
-    "40",
-    "No",
-    "", // PRN Available Days — not used for full_time
+  // 25 staff: 12 FT RNs + 3 PT RNs + 3 PRN RNs + 2 float + 2 agency + 3 CNAs
+  // Columns: FirstName, LastName, Role, EmploymentType, FTE, HomeUnit, CrossTrained,
+  //          CompetencyLevel, ChargeNurseQualified, ReliabilityRating, Email, Phone,
+  //          HireDate, WeekendExempt, VTOAvailable, Notes,
+  //          PreferredShift, PreferredDaysOff, MaxConsecutiveDays, MaxHoursPerWeek,
+  //          AvoidWeekends, PRNAvailableDays
+  const staffRows = [
+    // ── Full-time RNs (12) ────────────────────────────────────────────────────
+    ["Maria",       "Garcia",    "RN",  "full_time", 1.0, "ICU", "ER",           4, "Yes", 5, "maria.garcia@hospital.com",       "555-0101", "2018-03-15", "No",  "No",  "Lead charge nurse",           "day",   "Saturday, Sunday", 4, 40, "No", ""],
+    ["James",       "Wilson",    "RN",  "full_time", 1.0, "ICU", "",             5, "Yes", 5, "james.wilson@hospital.com",       "555-0102", "2015-06-01", "No",  "No",  "Senior charge — nights",      "night", "Saturday, Sunday", 4, 40, "No", ""],
+    ["Sarah",       "Johnson",   "RN",  "full_time", 1.0, "ICU", "",             3, "No",  4, "sarah.johnson@hospital.com",      "555-0103", "2020-09-10", "No",  "No",  "",                            "day",   "Saturday, Sunday", 4, 40, "No", ""],
+    ["Michael",     "Brown",     "RN",  "full_time", 1.0, "ICU", "",             3, "No",  4, "michael.brown@hospital.com",      "555-0104", "2019-11-20", "No",  "No",  "",                            "night", "Saturday, Sunday", 4, 40, "No", ""],
+    ["Jennifer",    "Davis",     "RN",  "full_time", 1.0, "ICU", "ER",           4, "Yes", 4, "jennifer.davis@hospital.com",     "555-0105", "2017-04-05", "No",  "No",  "Charge nurse backup",         "day",   "Saturday, Sunday", 4, 40, "No", ""],
+    ["Robert",      "Williams",  "RN",  "full_time", 1.0, "ICU", "",             2, "No",  3, "robert.williams@hospital.com",    "555-0106", "2022-01-15", "No",  "No",  "",                            "day",   "Saturday, Sunday", 4, 40, "No", ""],
+    ["Ashley",      "Jones",     "RN",  "full_time", 1.0, "ICU", "",             3, "No",  4, "ashley.jones@hospital.com",       "555-0107", "2021-07-01", "No",  "No",  "",                            "night", "Saturday, Sunday", 4, 40, "No", ""],
+    ["Kevin",       "Taylor",    "RN",  "full_time", 1.0, "ICU", "",             3, "No",  4, "kevin.taylor@hospital.com",       "555-0108", "2020-03-22", "No",  "No",  "",                            "day",   "Monday, Tuesday",  4, 40, "No", ""],
+    ["Emily",       "Anderson",  "RN",  "full_time", 1.0, "ICU", "",             3, "No",  3, "emily.anderson@hospital.com",     "555-0109", "2021-08-15", "No",  "No",  "",                            "night", "Wednesday, Thursday", 4, 40, "No", ""],
+    ["David",       "Martinez",  "RN",  "full_time", 1.0, "ICU", "",             3, "No",  4, "david.martinez@hospital.com",     "555-0110", "2019-05-10", "No",  "No",  "",                            "night", "Monday, Tuesday",  4, 40, "No", ""],
+    ["Lisa",        "Thomas",    "RN",  "full_time", 1.0, "ICU", "Med-Surg",     4, "Yes", 5, "lisa.thomas@hospital.com",        "555-0111", "2016-09-01", "No",  "Yes", "Charge nurse — flex",         "any",   "Friday, Saturday", 4, 40, "No", ""],
+    ["William",     "Jackson",   "RN",  "full_time", 1.0, "ICU", "",             3, "No",  3, "william.jackson@hospital.com",    "555-0112", "2021-02-14", "No",  "No",  "",                            "day",   "Saturday, Sunday", 4, 40, "No", ""],
+    // ── Part-time RNs (3) ─────────────────────────────────────────────────────
+    ["Rachel",      "White",     "RN",  "part_time", 0.6, "ICU", "",             3, "No",  4, "rachel.white@hospital.com",       "555-0201", "2021-10-01", "No",  "No",  "",                            "day",   "Sunday",           3, 40, "No", ""],
+    ["Christopher", "Harris",    "RN",  "part_time", 0.6, "ICU", "",             3, "No",  4, "christopher.harris@hospital.com", "555-0202", "2022-03-01", "No",  "No",  "",                            "night", "Sunday",           3, 40, "No", ""],
+    ["Lauren",      "Adams",     "RN",  "part_time", 0.8, "ICU", "",             3, "No",  3, "lauren.adams@hospital.com",       "555-0203", "2020-06-15", "No",  "No",  "",                            "day",   "",                 4, 40, "No", ""],
+    // ── PRN / Per-diem RNs (3) ────────────────────────────────────────────────
+    ["Patricia",    "Clark",     "RN",  "per_diem",  0.0, "ICU", "",             3, "No",  4, "patricia.clark@hospital.com",     "555-0301", "2023-03-01", "No",  "No",  "PRN — Mon/Wed/Fri",           "any",   "",                 3, 40, "No", "Mon, Wed, Fri"],
+    ["Amanda",      "Rodriguez", "RN",  "per_diem",  0.0, "ICU", "",             2, "No",  3, "amanda.rodriguez@hospital.com",   "555-0302", "2023-07-01", "No",  "No",  "PRN — weekends",              "any",   "",                 3, 40, "No", "Weekends"],
+    ["Carlos",      "Nguyen",    "RN",  "per_diem",  0.0, "ICU", "",             3, "No",  4, "carlos.nguyen@hospital.com",      "555-0303", "2022-11-01", "No",  "No",  "PRN — weekdays",              "any",   "",                 3, 40, "No", "Weekdays"],
+    // ── Float Pool (2) ────────────────────────────────────────────────────────
+    ["Jessica",     "Moore",     "RN",  "float",     1.0, "ICU", "ER, Med-Surg", 3, "No",  4, "jessica.moore@hospital.com",      "555-0401", "2020-01-10", "No",  "No",  "Float pool",                  "any",   "Saturday, Sunday", 4, 40, "No", ""],
+    ["Brandon",     "Scott",     "RN",  "float",     1.0, "ICU", "Med-Surg",     3, "No",  3, "brandon.scott@hospital.com",      "555-0402", "2021-05-20", "No",  "No",  "Float pool",                  "any",   "Saturday, Sunday", 4, 40, "No", ""],
+    // ── Agency RNs (2) ────────────────────────────────────────────────────────
+    ["Michelle",    "Kim",       "RN",  "agency",    0.0, "ICU", "",             2, "No",  3, "michelle.kim@agency.com",         "555-0501", "2024-01-01", "No",  "No",  "Agency nurse",                "any",   "",                 4, 60, "No", ""],
+    ["Nathan",      "Parker",    "RN",  "agency",    0.0, "ICU", "",             2, "No",  3, "nathan.parker@agency.com",        "555-0502", "2024-01-01", "No",  "No",  "Agency nurse",                "any",   "",                 4, 60, "No", ""],
+    // ── CNAs (3) — competency 2 required for ICU assignment ───────────────────
+    ["Marcus",      "Thompson",  "CNA", "full_time", 1.0, "ICU", "",             2, "No",  4, "marcus.thompson@hospital.com",    "555-0601", "2021-09-01", "No",  "No",  "",                            "day",   "Saturday, Sunday", 4, 40, "No", ""],
+    ["Stephanie",   "Clark",     "CNA", "full_time", 1.0, "ICU", "",             2, "No",  3, "stephanie.clark@hospital.com",    "555-0602", "2022-04-01", "No",  "No",  "",                            "night", "Saturday, Sunday", 4, 40, "No", ""],
+    ["Rachel",      "Martinez",  "CNA", "part_time", 0.5, "ICU", "",             2, "No",  3, "rachel.martinez@hospital.com",    "555-0603", "2023-01-15", "No",  "No",  "",                            "any",   "",                 3, 40, "No", ""],
   ];
-  // PRN/per_diem example — shows accepted formats: day names, "Weekdays", "Weekends", or "All"
-  const staffExamplePRN = [
-    "Patricia",
-    "Clark",
-    "RN",
-    "per_diem",
-    "0.0",
-    "ICU",
-    "",
-    "3",
-    "No",
-    "4",
-    "patricia.clark@hospital.com",
-    "555-0201",
-    "2023-03-01",
-    "No",
-    "No",
-    "PRN — available Mon/Wed/Fri",
-    "any",
-    "",
-    "3",
-    "40",
-    "No",
-    "Mon, Wed, Fri", // PRN Available Days — comma-separated day abbreviations
-  ];
-  const staffSheet = XLSX.utils.aoa_to_sheet([staffHeaders, staffExampleFT, staffExamplePRN]);
+  const staffSheet = XLSX.utils.aoa_to_sheet([staffHeaders, ...staffRows]);
   XLSX.utils.book_append_sheet(workbook, staffSheet, "Staff");
 
   // Units sheet
@@ -693,6 +687,20 @@ export function generateTemplate(): ArrayBuffer {
   ];
   const holidaysSheet = XLSX.utils.aoa_to_sheet([holidaysHeaders, ...holidaysExamples]);
   XLSX.utils.book_append_sheet(workbook, holidaysSheet, "Holidays");
+
+  // Census Bands sheet — 4 tiers for ICU
+  const censusBandsHeaders = [
+    "Name", "Unit", "Color", "Min Patients", "Max Patients",
+    "Required RNs", "Required LPNs", "Required CNAs", "Required Charge", "Ratio",
+  ];
+  const censusBandsExamples = [
+    ["Low Census",      "ICU", "blue",   1,  4, 2, 0, 0, 1, "2:1"],
+    ["Normal Census",   "ICU", "green",  5,  8, 4, 0, 0, 1, "2:1"],
+    ["High Census",     "ICU", "yellow", 9, 10, 5, 0, 0, 1, "2:1"],
+    ["Critical Census", "ICU", "red",   11, 12, 6, 0, 0, 1, "2:1"],
+  ];
+  const censusBandsSheet = XLSX.utils.aoa_to_sheet([censusBandsHeaders, ...censusBandsExamples]);
+  XLSX.utils.book_append_sheet(workbook, censusBandsSheet, "Census Bands");
 
   // Staff Leave sheet — 7 sample rows, one per leave type, spanning March–June 2026
   const staffLeaveHeaders = [

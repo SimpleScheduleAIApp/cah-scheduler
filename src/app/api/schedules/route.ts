@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { schedule, shiftDefinition, shift } from "@/db/schema";
+import { schedule, shiftDefinition, shift, censusBand } from "@/db/schema";
 import { eq, and, ne } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { buildShiftInserts } from "@/lib/schedules/build-shifts";
@@ -39,11 +39,21 @@ export async function POST(request: Request) {
     .where(and(eq(shiftDefinition.unit, unit), eq(shiftDefinition.isActive, true)))
     .all();
 
+  // Seed each new shift with Green tier so the census system works immediately.
+  // The manager can change tiers per-shift on the Daily Census page.
+  const greenBand = db
+    .select()
+    .from(censusBand)
+    .where(and(eq(censusBand.unit, unit), eq(censusBand.color, "green"), eq(censusBand.isActive, true)))
+    .get();
+
   const inserts = buildShiftInserts(
     newSchedule.id,
     newSchedule.startDate,
     newSchedule.endDate,
-    definitions
+    definitions,
+    "green",
+    greenBand?.id ?? null,
   );
   for (const values of inserts) {
     db.insert(shift).values(values).run();

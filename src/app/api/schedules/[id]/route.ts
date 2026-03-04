@@ -43,6 +43,7 @@ export async function GET(
       defRequiredStaff: shiftDefinition.requiredStaffCount,
       defRequiresCharge: shiftDefinition.requiresChargeNurse,
       defCountsTowardStaffing: shiftDefinition.countsTowardStaffing,
+      defUnit: shiftDefinition.unit,
     })
     .from(shift)
     .innerJoin(shiftDefinition, eq(shift.shiftDefinitionId, shiftDefinition.id))
@@ -92,18 +93,38 @@ export async function GET(
     .where(eq(censusBand.isActive, true))
     .all();
 
-  // Helper to calculate effective required staff based on census
-  function getEffectiveRequired(actualCensus: number | null, baseRequired: number): number {
-    if (actualCensus === null) return baseRequired;
+  // Helper to calculate effective required staff based on census tier or patient count.
+  // Priority 1: censusBandId direct lookup — use band directly, no Math.max,
+  //   so Blue (low census) can legitimately require FEWER staff than the base shift definition.
+  // Priority 2: acuityLevel + unit fallback — handles stale censusBandId (e.g. after DB re-seed)
+  //   and seeded shifts that have acuityLevel but no censusBandId. Also no Math.max.
+  // Priority 3: actualCensus (legacy numeric patient count path) — keeps Math.max so base is floor.
+  function getEffectiveRequired(
+    censusBandId: string | null,
+    acuityLevel: string | null,
+    unit: string | null,
+    actualCensus: number | null,
+    baseRequired: number
+  ): number {
+    if (censusBandId) {
+      const band = censusBands.find((b) => b.id === censusBandId);
+      if (band) return band.requiredRNs + band.requiredCNAs;
+    }
 
-    const band = censusBands.find(
-      (b) => actualCensus >= b.minPatients && actualCensus <= b.maxPatients
-    );
+    // Fallback: match by acuityLevel + unit (handles stale censusBandId or unseeded censusBandId)
+    if (acuityLevel && unit) {
+      const band = censusBands.find((b) => b.color === acuityLevel && b.unit === unit);
+      if (band) return band.requiredRNs + band.requiredCNAs;
+    }
 
-    if (band) {
-      // Census band requirement = RNs + CNAs
-      const censusRequired = band.requiredRNs + band.requiredCNAs;
-      return Math.max(censusRequired, baseRequired);
+    if (actualCensus !== null) {
+      const band = censusBands.find(
+        (b) => actualCensus >= b.minPatients && actualCensus <= b.maxPatients
+      );
+      if (band) {
+        const censusRequired = band.requiredRNs + band.requiredCNAs;
+        return Math.max(censusRequired, baseRequired);
+      }
     }
 
     return baseRequired;
@@ -112,7 +133,9 @@ export async function GET(
   // Build response
   const shiftsWithAssignments = shifts.map((s) => {
     const baseRequired = s.requiredStaffCount ?? s.defRequiredStaff;
-    const effectiveRequired = getEffectiveRequired(s.actualCensus, baseRequired);
+    const effectiveRequired = getEffectiveRequired(
+      s.censusBandId, s.acuityLevel, s.defUnit, s.actualCensus, baseRequired
+    );
 
     return {
       id: s.id,

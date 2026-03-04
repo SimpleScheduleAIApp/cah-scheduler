@@ -16,17 +16,23 @@ export interface ShiftInsertValues {
   date: string; // YYYY-MM-DD
   requiredStaffCount: number;
   requiresChargeNurse: boolean;
+  acuityLevel?: "blue" | "green" | "yellow" | "red" | null;
+  censusBandId?: string | null;
 }
 
 /**
  * Enumerates every (date, definition) combination for the given range.
  * Both `startDate` and `endDate` are inclusive (YYYY-MM-DD strings).
+ * `defaultAcuityLevel` and `defaultCensusBandId` seed each shift with Green
+ * so the census tier system works immediately on newly created schedules.
  */
 export function buildShiftInserts(
   scheduleId: string,
   startDate: string,
   endDate: string,
-  definitions: ShiftDefinitionLike[]
+  definitions: ShiftDefinitionLike[],
+  defaultAcuityLevel?: "blue" | "green" | "yellow" | "red" | null,
+  defaultCensusBandId?: string | null,
 ): ShiftInsertValues[] {
   if (definitions.length === 0) return [];
 
@@ -43,6 +49,8 @@ export function buildShiftInserts(
         date: dateStr,
         requiredStaffCount: def.requiredStaffCount,
         requiresChargeNurse: def.requiresChargeNurse,
+        acuityLevel: defaultAcuityLevel ?? null,
+        censusBandId: defaultCensusBandId ?? null,
       });
     }
   }

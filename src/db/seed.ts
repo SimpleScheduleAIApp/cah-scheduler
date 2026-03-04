@@ -17,12 +17,19 @@ function uuid() {
 async function seed() {
   console.log("Seeding database with comprehensive test data...\n");
 
-  // Clear existing data (in correct order for foreign keys)
+  // Clear existing data in FK-safe order.
+  // open_shift.filledByAssignmentId and originalStaffId have no ON DELETE CASCADE,
+  // so open_shift must be deleted before assignment and staff.
+  // generation_job and staff_holiday_assignment are also deleted explicitly
+  // before their parent tables to avoid any cascade ambiguity.
   sqlite.exec(`
     DELETE FROM exception_log;
+    DELETE FROM generation_job;
     DELETE FROM scenario;
+    DELETE FROM open_shift;
     DELETE FROM callout;
     DELETE FROM shift_swap_request;
+    DELETE FROM staff_holiday_assignment;
     DELETE FROM assignment;
     DELETE FROM shift;
     DELETE FROM schedule;
@@ -120,7 +127,7 @@ async function seed() {
   console.log(`✓ Created ${holidays.length} public holidays`);
 
   // ============================================================
-  // STAFF (30 staff members - realistic mix)
+  // STAFF (33 staff members - realistic mix)
   // ============================================================
   const staffData = [
     // === ICU STAFF (12 members) ===
@@ -169,6 +176,18 @@ async function seed() {
     // === STAFF WITH SPECIAL STATUS (2 members) ===
     { id: uuid(), firstName: "Elizabeth", lastName: "Mitchell", role: "RN" as const, employmentType: "full_time" as const, fte: 0.8, hireDate: "2019-07-01", icuCompetencyLevel: 4, isChargeNurseQualified: true, reliabilityRating: 5, certifications: ["CCRN", "BLS", "ACLS"], email: "elizabeth.mitchell@cah.local", phone: "512-555-0127", homeUnit: "ICU", crossTrainedUnits: [], weekendExempt: true, notes: "Weekend exempt - ADA accommodation for childcare" },
     { id: uuid(), firstName: "William", lastName: "Roberts", role: "RN" as const, employmentType: "full_time" as const, fte: 1.0, hireDate: "2020-04-01", icuCompetencyLevel: 3, isChargeNurseQualified: false, reliabilityRating: 2, certifications: ["BLS", "ACLS"], email: "william.roberts@cah.local", phone: "512-555-0128", homeUnit: "ICU", crossTrainedUnits: [], weekendExempt: false, notes: "Frequent callouts - on performance improvement plan", flexHoursYearToDate: 24 },
+
+    // === 5 ADDITIONAL STAFF (filling coverage gaps) ===
+    // Night charge backup — Level 4, charge qualified (James Wilson is the only night charge; this gives resilience)
+    { id: uuid(), firstName: "Sophia", lastName: "Patel", role: "RN" as const, employmentType: "full_time" as const, fte: 1.0, hireDate: "2020-05-12", icuCompetencyLevel: 4, isChargeNurseQualified: true, reliabilityRating: 4, certifications: ["CCRN", "BLS", "ACLS"], email: "sophia.patel@cah.local", phone: "512-555-0129", homeUnit: "ICU", crossTrainedUnits: [], weekendExempt: false, notes: "Night charge backup - Level 4" },
+    // Second LPN (part-time) — only Jessica Rodriguez is an LPN; adds shift flexibility
+    { id: uuid(), firstName: "Marcus", lastName: "Thompson", role: "LPN" as const, employmentType: "part_time" as const, fte: 0.6, hireDate: "2022-08-01", icuCompetencyLevel: 3, isChargeNurseQualified: false, reliabilityRating: 4, certifications: ["LPN", "BLS", "ACLS"], email: "marcus.thompson@cah.local", phone: "512-555-0130", homeUnit: "ICU", crossTrainedUnits: [], weekendExempt: false },
+    // All-days PRN RN — available any day; useful when multiple staff call out
+    { id: uuid(), firstName: "Olivia", lastName: "Bennett", role: "RN" as const, employmentType: "per_diem" as const, fte: 0.0, hireDate: "2023-09-01", icuCompetencyLevel: 3, isChargeNurseQualified: false, reliabilityRating: 4, certifications: ["BLS", "ACLS"], email: "olivia.bennett@cah.local", phone: "512-555-0131", homeUnit: "ICU", crossTrainedUnits: [], weekendExempt: false, notes: "PRN - available all days" },
+    // Charge-qualified float RN — adds a charge-nurse option to the float pool
+    { id: uuid(), firstName: "Carlos", lastName: "Rivera", role: "RN" as const, employmentType: "float" as const, fte: 1.0, hireDate: "2021-07-15", icuCompetencyLevel: 4, isChargeNurseQualified: true, reliabilityRating: 5, certifications: ["CCRN", "BLS", "ACLS", "PALS"], email: "carlos.rivera@cah.local", phone: "512-555-0132", homeUnit: null, crossTrainedUnits: ["ICU", "ER", "Med-Surg"], weekendExempt: false, notes: "Float pool - charge qualified, covers all units" },
+    // Extra CNA (full-time) — Yellow/Red census tiers require 2 CNAs; currently only 2 FT CNAs exist
+    { id: uuid(), firstName: "Natalie", lastName: "Brooks", role: "CNA" as const, employmentType: "full_time" as const, fte: 1.0, hireDate: "2024-01-08", icuCompetencyLevel: 2, isChargeNurseQualified: false, reliabilityRating: 3, certifications: ["CNA", "BLS"], email: "natalie.brooks@cah.local", phone: "512-555-0133", homeUnit: "ICU", crossTrainedUnits: [], weekendExempt: false },
   ];
 
   for (const s of staffData) {
@@ -228,17 +247,26 @@ async function seed() {
   // ============================================================
   // CENSUS BANDS
   // ============================================================
-  const censusBands = [
-    { id: uuid(), name: "Low Census", unit: "ICU", minPatients: 1, maxPatients: 4, requiredRNs: 2, requiredLPNs: 0, requiredCNAs: 1, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
-    { id: uuid(), name: "Normal Census", unit: "ICU", minPatients: 5, maxPatients: 8, requiredRNs: 3, requiredLPNs: 1, requiredCNAs: 1, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
-    { id: uuid(), name: "High Census", unit: "ICU", minPatients: 9, maxPatients: 10, requiredRNs: 4, requiredLPNs: 1, requiredCNAs: 2, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
-    { id: uuid(), name: "Critical Census", unit: "ICU", minPatients: 11, maxPatients: 12, requiredRNs: 5, requiredLPNs: 1, requiredCNAs: 2, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
+  const censusBands: { id: string; name: string; color: "blue" | "green" | "yellow" | "red"; unit: string; minPatients: number; maxPatients: number; requiredRNs: number; requiredLPNs: number; requiredCNAs: number; requiredChargeNurses: number; patientToNurseRatio: string }[] = [
+    // RN counts satisfy strict 2:1 RN:patient ratio at the TOP of each tier's range.
+    // requiredLPNs = 0: ICU scope-of-practice prevents LPN substitution for RNs.
+    // requiredChargeNurses = 1: display/documentation only; included in the RN count (not extra).
+    { id: uuid(), name: "Low Census",      color: "blue",   unit: "ICU", minPatients: 1,  maxPatients: 4,  requiredRNs: 2, requiredLPNs: 0, requiredCNAs: 1, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
+    { id: uuid(), name: "Normal Census",   color: "green",  unit: "ICU", minPatients: 5,  maxPatients: 8,  requiredRNs: 4, requiredLPNs: 0, requiredCNAs: 1, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
+    { id: uuid(), name: "High Census",     color: "yellow", unit: "ICU", minPatients: 9,  maxPatients: 10, requiredRNs: 5, requiredLPNs: 0, requiredCNAs: 2, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
+    { id: uuid(), name: "Critical Census", color: "red",    unit: "ICU", minPatients: 11, maxPatients: 12, requiredRNs: 6, requiredLPNs: 0, requiredCNAs: 2, requiredChargeNurses: 1, patientToNurseRatio: "2:1" },
   ];
 
   for (const cb of censusBands) {
     db.insert(schema.censusBand).values(cb).run();
   }
   console.log(`✓ Created ${censusBands.length} census bands`);
+
+  // Build a color → band ID map so shifts can reference the correct band
+  const bandIdByColor: Record<string, string> = {};
+  for (const cb of censusBands) {
+    bandIdByColor[cb.color] = cb.id;
+  }
 
   // ============================================================
   // RULES
@@ -247,7 +275,7 @@ async function seed() {
     // Hard rules
     { id: uuid(), name: "Minimum Staff Per Shift", ruleType: "hard" as const, category: "staffing" as const, description: "Each shift must meet the minimum staff count", parameters: { evaluator: "min-staff" }, weight: 1.0 },
     { id: uuid(), name: "Charge Nurse Required", ruleType: "hard" as const, category: "staffing" as const, description: "Shifts requiring a charge nurse must have one assigned", parameters: { evaluator: "charge-nurse" }, weight: 1.0 },
-    { id: uuid(), name: "Patient-to-Licensed-Staff Ratio", ruleType: "hard" as const, category: "staffing" as const, description: "Patient ratio must not exceed census band limit", parameters: { evaluator: "patient-ratio" }, weight: 1.0 },
+    { id: uuid(), name: "Patient-to-Nurse Ratio", ruleType: "hard" as const, category: "staffing" as const, description: "RN:patient ratio must not exceed census band limit (2:1 ICU standard)", parameters: { evaluator: "patient-ratio" }, weight: 1.0 },
     { id: uuid(), name: "Minimum Rest Between Shifts", ruleType: "hard" as const, category: "rest" as const, description: "Staff must have minimum 10 hours rest between shifts", parameters: { evaluator: "rest-hours", minRestHours: 10 }, weight: 1.0 },
     { id: uuid(), name: "Maximum Consecutive Days", ruleType: "hard" as const, category: "rest" as const, description: "Staff cannot work more than 5 consecutive days", parameters: { evaluator: "max-consecutive", maxConsecutiveDays: 5 }, weight: 1.0 },
     { id: uuid(), name: "ICU Competency Minimum", ruleType: "hard" as const, category: "skill" as const, description: "Staff assigned to ICU must have competency level 2+", parameters: { evaluator: "icu-competency", minLevel: 2 }, weight: 1.0 },
@@ -395,6 +423,7 @@ async function seed() {
       shiftDefinitionId: dayShiftId,
       date,
       acuityLevel: acuity,
+      censusBandId: bandIdByColor[acuity] ?? null,
       acuityExtraStaff: acuity === "yellow" ? 1 : acuity === "red" ? 2 : 0,
       actualCensus: 6 + (i % 5), // Census varies 6-10
     }).run();
@@ -407,6 +436,7 @@ async function seed() {
       shiftDefinitionId: nightShiftId,
       date,
       acuityLevel: "green", // Nights usually calmer
+      censusBandId: bandIdByColor["green"] ?? null,
       actualCensus: 5 + (i % 4),
     }).run();
     shifts.push({ id: nightId, date, type: "night", defId: nightShiftId });

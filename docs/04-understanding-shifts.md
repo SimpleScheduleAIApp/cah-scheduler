@@ -83,44 +83,32 @@ Does this shift need someone qualified to be "in charge"?
 
 Almost always yes. Every shift needs leadership.
 
-### 5. Census & Census Band
+### 5. Census Tier
 
-**Census** = current patient count.
-**Census Band** = the staffing level that applies.
+The nurse manager sets a **census tier** for each shift at the start of the day using the **Daily Census** page. The tier captures how busy the unit is and directly determines how many staff are required.
 
-**Example:**
-> Shift has 7 patients (High Census band).
-> According to the census bands, High Census requires 3 RNs and 1 CNA.
+| Tier | Color | Meaning | Action |
+|------|-------|---------|--------|
+| **Blue** | 🔵 | Low occupancy | Low census protocol — some staff may be sent home |
+| **Green** | 🟢 | Normal census | Standard staffing applies |
+| **Yellow** | 🟡 | Elevated census | Call in extra staff |
+| **Red** | 🔴 | Critical census | All hands on deck |
 
-### 6. Acuity Level
-
-How sick are the patients on this shift?
-
-| Level | Meaning | Extra Staff Needed |
-|-------|---------|-------------------|
-| **Green** | Normal | None |
-| **Yellow** | Elevated - patients are sicker than usual | +1 |
-| **Red** | Crisis - very sick patients, high intensity | +2 |
-
-The manager or charge nurse sets this based on patient conditions.
+Each tier is backed by a **census band** record (configured under **Rules → Census Bands**) that specifies exactly how many RNs, LPNs, and CNAs are required.
 
 ---
 
 ## How Shifts Are Staffed
 
-### Step 1: Determine Requirements
+### Step 1: Set the Census Tier
 
-For each shift, calculate:
-1. **Base requirement** from shift definition (e.g., "Day shift needs 4 nurses")
-2. **Adjust for census** (if census is known)
-3. **Adjust for acuity** (add extra staff if Yellow/Red)
-4. **Add sitter count** (1:1 patient observation needs)
+The nurse manager opens the **Daily Census** page, selects the date, and picks a tier (🔵 Blue / 🟢 Green / 🟡 Yellow / 🔴 Red) for each shift. The tier's staffing requirements take effect immediately.
 
 **Example:**
-> Base requirement: 3 nurses
-> Census band says: 4 nurses
-> Acuity is Yellow: +1 nurse
-> Total needed: 5 nurses
+> Manager opens the Census page for Tuesday.
+> Day Shift: 6 patients — selects 🟢 Green (Normal).
+> Night Shift: 9 patients — selects 🟡 Yellow (Elevated).
+> Green band requires 3 RNs + 1 CNA. Yellow band requires 4 RNs + 2 CNAs.
 
 ### Step 2: Make Assignments
 

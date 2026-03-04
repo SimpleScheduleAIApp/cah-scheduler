@@ -58,8 +58,19 @@ These are **preferences**. The scheduler tries to satisfy them but can break the
 
 **How it works:**
 - Each shift defines how many staff are needed
-- Census bands may increase this requirement
+- The nurse manager sets a **census tier** each day using the Census page — this directly determines the required staffing for that shift
 - The scheduler won't create a shift with gaps
+
+**Census tiers (set on the Daily Census page):**
+
+| Tier | Meaning | Action |
+|---|---|---|
+| 🔵 Blue | Low occupancy | Low census protocol — some staff may be sent home |
+| 🟢 Green | Normal census | Standard staffing applies |
+| 🟡 Yellow | Elevated census | Extra staff needed — call someone in |
+| 🔴 Red | Critical census | All hands on deck |
+
+The patient count range and staffing requirements for each tier are configured under **Rules → Census Bands**.
 
 ### 2. Charge Nurse Required
 

@@ -3,8 +3,6 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +30,7 @@ interface ShiftData {
   requiredStaffCount: number;
   requiresChargeNurse: boolean;
   actualCensus: number | null;
+  acuityLevel: "blue" | "green" | "yellow" | "red" | null;
   assignments: ShiftAssignment[];
 }
 
@@ -63,7 +62,6 @@ export function AssignmentDialog({
   scheduleId,
   onAssign,
   onRemove,
-  onCensusChange,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -71,17 +69,12 @@ export function AssignmentDialog({
   scheduleId: string;
   onAssign: (shiftId: string, staffId: string, isChargeNurse: boolean) => void;
   onRemove: (assignmentId: string) => void;
-  onCensusChange?: (shiftId: string, census: number | null) => void;
 }) {
   const [availableStaff, setAvailableStaff] = useState<StaffOption[]>([]);
   const [assignedContext, setAssignedContext] = useState<Map<string, StaffOption>>(new Map());
-  const [censusValue, setCensusValue] = useState<string>("");
 
   useEffect(() => {
     if (open && shift) {
-      // Set initial census value
-      setCensusValue(shift.actualCensus?.toString() ?? "");
-
       // Fetch all staff with scheduling context for this shift.
       // Already-assigned staff come back with alreadyAssigned: true — used to
       // enrich the "Currently Assigned" section with hours and preference info.
@@ -95,13 +88,6 @@ export function AssignmentDialog({
         });
     }
   }, [open, shift, scheduleId]);
-
-  async function handleCensusUpdate() {
-    if (!shift || !onCensusChange) return;
-    const newCensus = censusValue === "" ? null : parseInt(censusValue, 10);
-    if (censusValue !== "" && isNaN(newCensus as number)) return;
-    onCensusChange(shift.id, newCensus);
-  }
 
   if (!shift) return null;
 
@@ -132,32 +118,48 @@ export function AssignmentDialog({
             )}
           </div>
 
-          {/* Census input */}
-          <div className="flex items-end gap-2 p-3 rounded-md border bg-muted/30">
-            <div className="flex-1">
-              <Label htmlFor="census" className="text-sm">Patient Census</Label>
-              <Input
-                id="census"
-                type="number"
-                min="0"
-                max="50"
-                placeholder="Enter patient count"
-                value={censusValue}
-                onChange={(e) => setCensusValue(e.target.value)}
-                className="mt-1"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Census determines required staffing from census bands
-              </p>
+          {/* Census tier (read-only — set on the Census page) */}
+          {shift.acuityLevel ? (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-md border bg-muted/30 text-sm">
+              <span className="font-medium">Census:</span>
+              <span
+                className={`inline-flex items-center gap-1.5 font-medium ${
+                  shift.acuityLevel === "blue"
+                    ? "text-blue-600"
+                    : shift.acuityLevel === "green"
+                    ? "text-green-600"
+                    : shift.acuityLevel === "yellow"
+                    ? "text-yellow-600"
+                    : "text-red-600"
+                }`}
+              >
+                <span
+                  className={`inline-block h-2 w-2 rounded-full ${
+                    shift.acuityLevel === "blue"
+                      ? "bg-blue-500"
+                      : shift.acuityLevel === "green"
+                      ? "bg-green-500"
+                      : shift.acuityLevel === "yellow"
+                      ? "bg-yellow-500"
+                      : "bg-red-500"
+                  }`}
+                />
+                {shift.acuityLevel === "blue"
+                  ? "Low Census"
+                  : shift.acuityLevel === "green"
+                  ? "Normal"
+                  : shift.acuityLevel === "yellow"
+                  ? "Elevated"
+                  : "Critical"}
+              </span>
+              <a
+                href="/census"
+                className="ml-auto text-xs text-muted-foreground underline hover:text-foreground"
+              >
+                Edit on Census page
+              </a>
             </div>
-            <Button
-              size="sm"
-              onClick={handleCensusUpdate}
-              disabled={!onCensusChange}
-            >
-              Update
-            </Button>
-          </div>
+          ) : null}
 
           {/* Current assignments */}
           {shift.assignments.length > 0 && (

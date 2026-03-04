@@ -11,10 +11,7 @@ Quick reference for all terms used in CAH Scheduler. Terms are organized alphabe
 ## A
 
 ### Acuity
-How sick or complex the patients are. Higher acuity = sicker patients = more staff needed.
-- **Green**: Normal acuity
-- **Yellow**: Elevated acuity (+1 staff)
-- **Red**: High/crisis acuity (+2 staff)
+How sick or complex the patients are. Higher acuity = sicker patients = more staff needed. In CAH Scheduler, acuity and census tier are unified — the nurse manager selects a color tier on the **Census page** each shift, which determines the full staffing requirement.
 
 ### ACLS (Advanced Cardiac Life Support)
 A certification for handling cardiac emergencies. Required for some assignments.
@@ -49,7 +46,16 @@ A small hospital (≤25 beds) in a rural area, at least 35 miles from another ho
 The number of patients currently in a unit or hospital.
 
 ### Census Band
-A range of patient counts that determines staffing requirements. Example: "4-6 patients = 2 RNs needed"
+The staffing specification for one census tier. Each unit has four bands — one per color tier — defining exactly how many RNs, LPNs, CNAs, and charge nurses are required. The nurse manager selects a tier on the **Census page**; the system looks up the matching band and enforces its staffing requirements.
+
+### Census Tier
+One of four color-coded occupancy levels the nurse manager sets each shift on the **Census page**:
+- 🔵 **Blue** — Low occupancy. Low census protocol; some staff may be sent home.
+- 🟢 **Green** — Normal census. Standard staffing applies.
+- 🟡 **Yellow** — Elevated census. Extra staff need to be called in.
+- 🔴 **Red** — Critical census. All hands on deck.
+
+Selecting a tier updates the shift's minimum staffing requirement to that tier's census band specification.
 
 ### Charge Nurse
 The nurse in charge of a shift. Makes assignments, handles problems, coordinates with doctors.
@@ -135,7 +141,7 @@ Time off from work. Types include vacation, sick, medical, maternity, etc.
 RNs and LPNs - staff licensed to perform nursing care. Used in ratio calculations.
 
 ### Low Census
-When patient count drops below expected levels. May result in staff being sent home.
+When patient count drops below expected levels. Represented by the 🔵 **Blue** census tier. May result in staff being sent home following the unit's low census order (Voluntary → OT → PRN → Full-Time).
 
 ### LPN (Licensed Practical Nurse)
 A nurse with less training than an RN. Works under RN supervision. Can do most nursing tasks except certain medications.
