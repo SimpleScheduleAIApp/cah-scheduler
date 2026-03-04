@@ -87,7 +87,9 @@ The patient count range and staffing requirements for each tier are configured u
 **What it means:** The ratio of patients to licensed nurses cannot exceed the defined limit.
 
 **Example:**
-> If the ratio is 2:1 and there are 8 patients, you need at least 4 licensed staff (RNs + LPNs).
+> If the ratio is 2:1 and there are 8 patients, you need at least 4 RNs assigned.
+
+**Note:** Only **RNs** count toward the patient ratio in ICU settings per AACN standards. LPNs and CNAs are support staff — they count toward total headcount but do not satisfy the RN:patient ratio requirement.
 
 **Why it matters:** Too many patients per nurse = unsafe care.
 

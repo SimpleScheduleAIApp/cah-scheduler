@@ -218,6 +218,62 @@ If a shift requires a charge nurse, eligible charge nurses (Level 4+) show an **
 
 ---
 
+## Daily Census (`/census`)
+
+**Purpose:** Tell the system how many patients are in the unit today and what tier of staffing is needed for each shift.
+
+### What It Is
+
+The nurse manager uses this page each day to set a **census tier** for every shift. The tier determines the required staffing levels for that shift — RNs, CNAs, and charge nurse. The schedule grid reflects the correct required count as soon as a tier is saved.
+
+### Census Tiers
+
+| Tier | Meaning | What It Means for Staffing |
+|------|---------|---------------------------|
+| 🔵 **Blue** | Low Census | Fewer patients than normal — some staff may be sent home (low census protocol) |
+| 🟢 **Green** | Normal Census | Baseline staffing applies — standard assignment for most days |
+| 🟡 **Yellow** | Elevated Census | More patients than normal — may need to call in extra staff |
+| 🔴 **Red** | Critical Census | Highest patient load — all available staff needed |
+
+### What You'll See
+
+- **Tab 1 — Set Daily Tiers**: Pick a date, then set a tier for each shift using the dropdown. Unset shifts default to Green. Click **Save Changes** to apply.
+- **Tab 2 — Band Thresholds**: Read-only reference showing the staffing requirements (RNs, CNAs, charge nurses, patient ratio) for each tier on each unit.
+
+### Common Tasks
+
+| Task | How To |
+|------|--------|
+| Set today's census tier | Open page → pick date → select tier per shift → Save Changes |
+| Check staffing requirements for a tier | Click "Band Thresholds" tab |
+| Override a tier mid-day | Return to the page, change the dropdown, Save Changes |
+
+### How It Connects to the Schedule
+
+Once you save a census tier for a shift:
+- The **Schedule grid** immediately shows the updated required count (e.g., "3/5 staff" instead of "3/4")
+- The **rule engine** evaluates staffing against the tier — if short, a hard violation badge appears
+- The **auto-scheduler** (when you generate a new schedule) fills to the tier's required count, not just the shift definition's baseline
+
+### Typical Workflow
+
+```
+1. Arrive for your shift or review the day's census at the start of your shift
+        ↓
+2. Go to Daily Census page → pick today's date
+        ↓
+3. Set the tier for each shift (Day, Night) based on patient census
+        ↓
+4. Click Save Changes
+        ↓
+5. Open the Schedule grid — the required counts update automatically
+        ↓
+6. If Yellow or Red: go to Coverage page to find extra staff or call someone in
+   If Blue: use the Low Census protocol (from Unit Settings) to send staff home
+```
+
+---
+
 ## Scenarios (`/scenarios`)
 
 **Purpose:** Generate and compare different scheduling options, then choose the best one.
@@ -385,6 +441,13 @@ Click **View** on any filled callout to see the complete record: shift date and 
 | Deny a request | Click "Deny" — a dialog opens requiring a written reason |
 | View full details of any request | Click "View" on the row |
 | Create request for staff | Click "New Leave Request" |
+
+### What Happens When You Approve Leave
+
+When you approve a leave request, the system automatically:
+1. **Cancels the staff member's assignments** on every affected date
+2. **Updates the Schedule grid**: the staff member's name appears with a strikethrough and an orange **"Leave"** badge on each affected shift — and the shift's count drops (e.g., 4/5) so you can immediately see the gap
+3. **Creates coverage requests** for each date — either a Callout (if the shift is within 7 days) or an Open Shift with replacement candidates (if more than 7 days away)
 
 ### Approving/Denying
 
@@ -671,16 +734,17 @@ The application is organized around your workflow:
 2. **Dashboard** - Your starting point
 3. **Staff** - Who you're scheduling (click names for calendar view)
 4. **Schedule** - The main event; use "Generate Schedule" to auto-build, click issue badges for details
-5. **Scenarios** - Generate 3 variants, compare scores, Apply your preferred one
-6. **Callouts** - Handle absences
-7. **Coverage** - Review and approve replacement candidates
-8. **Leave** - Time-off requests (auto-creates open shifts when approved)
-9. **Swaps** - Shift trades
-10. **Availability** - PRN scheduling
-11. **Rules** - Scheduling constraints
-12. **Units** - Department configuration
-13. **Holidays** - Special days
-14. **Audit** - Change history
+5. **Census** - Set daily patient census tier (Blue/Green/Yellow/Red) per shift — drives staffing requirements
+6. **Scenarios** - Generate 3 variants, compare scores, Apply your preferred one
+7. **Callouts** - Handle absences
+8. **Coverage** - Review and approve replacement candidates
+9. **Leave** - Time-off requests (cancels assignments and shows Leave badge in grid when approved)
+10. **Swaps** - Shift trades
+11. **Availability** - PRN scheduling
+12. **Rules** - Scheduling constraints (Census Bands tab is editable inline)
+13. **Units** - Department configuration
+14. **Holidays** - Special days
+15. **Audit** - Change history
 
 Navigate using the sidebar, and you'll find what you need!
 

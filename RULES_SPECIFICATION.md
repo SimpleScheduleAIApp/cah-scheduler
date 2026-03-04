@@ -1,7 +1,7 @@
 # CAH Scheduler - Complete Rules Specification
 
-**Document Version:** 1.5.1
-**Last Updated:** March 3, 2026 (v1.5.1)
+**Document Version:** 1.5.7
+**Last Updated:** March 4, 2026 (v1.5.7)
 **Purpose:** This document describes all scheduling rules and logic implemented in the CAH Scheduler application. Please review and mark any rules that need modification.
 
 ---
@@ -277,15 +277,18 @@ Each unit (ICU, ER, Med-Surg, etc.) can have its own configuration:
 
 Census bands define staffing requirements based on patient count:
 
-### Example: ICU Census Bands
-| Band Name | Patients | Required RNs | Required LPNs | Required CNAs | Charge Nurses | Ratio |
-|-----------|----------|--------------|---------------|---------------|---------------|-------|
-| Low Census | 1-3 | 1 | 0 | 0 | 1 | 2:1 |
-| Normal Census | 4-6 | 2 | 1 | 1 | 1 | 2:1 |
-| High Census | 7-9 | 3 | 1 | 1 | 1 | 2:1 |
-| Critical Census | 10-12 | 4 | 1 | 2 | 1 | 1:1 |
+### ICU Census Tiers (current seed values)
 
-**Note:** Patient-to-nurse ratio is calculated using **licensed staff (RN + LPN)**, not just RNs.
+The census system uses four color tiers. Each tier's `requiredRNs` is sized to satisfy the 2:1 RN:patient ratio at the **peak** patient count for that tier. The manager selects a tier on the **Daily Census page** (`/census`); the system applies the band's staffing requirements directly.
+
+| Tier | Color | Patients | Required RNs | Required LPNs | Required CNAs | Charge Nurses (in RN count) | Ratio |
+|------|-------|----------|--------------|---------------|---------------|-----------------------------|-------|
+| Blue | 🔵 Low Census | 1-4 | 2 | 0 | 0 | 1 | 2:1 |
+| Green | 🟢 Normal | 5-8 | 4 | 0 | 1 | 1 | 2:1 |
+| Yellow | 🟡 Elevated | 9-10 | 5 | 0 | 1 | 1 | 2:1 |
+| Red | 🔴 Critical | 11-12 | 6 | 0 | 2 | 1 | 2:1 |
+
+**Note:** Patient-to-nurse ratio is RN-only for ICU per AACN standard. LPNs do NOT count toward this ratio (scope-of-practice restriction: no IV push, no admissions, no blood administration in ICU). Census bands are viewable and editable under **Rules → Census Bands** tab.
 
 ---
 
@@ -490,7 +493,7 @@ All pages are accessible from the left sidebar. The navigation order is:
 | **Add Holidays** | `/settings/holidays` | Click "Add Standard Holidays" for US holidays or "Add Holiday" for custom |
 | **Log Callout** | `/callouts` | Click "Log Callout" and follow escalation workflow |
 | **View Audit History** | `/audit` | Filter by action type, date range, or entity |
-| **Set Shift Census** | `/schedule/[id]` | Click on a shift cell, enter patient census in the dialog, click "Update" - staffing requirements adjust based on census bands |
+| **Set Shift Census Tier** | `/census` | Go to the Daily Census page, pick the date, and select a color tier (Blue/Green/Yellow/Red) per shift — staffing requirements update immediately |
 | **View Staff Preferences** | `/staff` | Click on a staff member's name to open detail dialog - see shift preferences, max hours, preferred days off, etc. |
 | **Export Data to Excel** | `/setup` | Click "Export Data" to download current database data (Staff, Units, Holidays, Census Bands) as Excel file |
 
@@ -539,6 +542,12 @@ Please review each section and note any changes needed:
 | 1.4.15 | Feb 23, 2026 | **Cross-schedule weekend fairness (§12.4):** Scheduler now seeds the weekend count from the prior schedule period. At context-build time, `buildContext()` queries all weekend assignments in the one-period lookback window before the new schedule starts and stores per-staff counts as `historicalWeekendCounts`. `softPenalty()` adds these to the in-schedule count before applying the bonus/penalty. Nurses who hit their quota last period start the new period "already at quota" and are deprioritised for weekend slots; nurses who were below quota get the full assignment bonus. Prevents the deterministic greedy algorithm from assigning the same nurses to weekends every period. |
 | 1.5.0 | Mar 3, 2026 | **Daily Census page (§3.1, §3.3):** Added dedicated Census Management page at `/census`. Nurse manager selects a color tier (🔵 Blue/🟢 Green/🟡 Yellow/🔴 Red) per shift instead of entering a numeric patient count. Selecting a tier sets both `acuityLevel` and `censusBandId` on the shift. The min-staff rule uses `censusBandId` for direct band lookup (priority over legacy `actualCensus` range search). `acuityExtraStaff` is zeroed when a tier is selected to prevent double-counting. Added `color` column to census_band table. Removed census input from assignment dialog; replaced with read-only tier badge. |
 | 1.5.1 | Mar 3, 2026 | **Patient ratio rule corrected to RN-only (§3.3):** The 2:1 ICU nurse:patient ratio is RN-to-patient per AACN standard. Previous implementation counted RN + LPN as "licensed staff" — corrected to count RNs only. LPNs remain assignable as support staff (count toward total headcount) but do not satisfy the RN:patient ratio. **Census band staffing numbers corrected:** ICU bands redesigned so `requiredRNs` alone satisfies strict 2:1 at the peak patient count for each tier: Blue 1–4 pts → 2 RNs; Green 5–8 pts → 4 RNs; Yellow 9–10 pts → 5 RNs; Red 11–12 pts → 6 RNs. `requiredLPNs` set to 0 for ICU (LPN scope-of-practice does not extend to ICU-level RN duties). **Census Bands now editable in UI** (Rules → Census Bands tab) — inline edit per row using existing PUT API. Charge Nurses column labelled "(in RN count)" to clarify it is not an extra headcount. |
+| 1.5.2 | Mar 4, 2026 | **Census page UX (§11):** Unset shifts now default to Green tier on page load so managers don't have to manually select Green for every shift. Band Thresholds tab shows tier color labels ("Blue — Low Census", "Green — Normal", etc.) with correct colored dots instead of raw DB band names. Rules page Census Bands tab shows the same tier labels. **Schedule API required count (§3.1):** `getEffectiveRequired()` now checks `censusBandId` first (direct band lookup, no `Math.max` — allows Blue tier to legitimately reduce below base staffing level), then falls back to `acuityLevel`+unit color match, then `actualCensus` range lookup (which keeps `Math.max` as floor). |
+| 1.5.3 | Mar 4, 2026 | **Seed and 3-priority fallback (§3.1):** All seeded shifts now carry `censusBandId` matching their `acuityLevel`. Schedule API `getEffectiveRequired()` extended to a 3-priority fallback: (1) `censusBandId` direct ID lookup, (2) `acuityLevel`+unit color match (handles stale IDs after re-seed), (3) `actualCensus` range lookup. Prevents display of wrong required count when DB is reseeded or `censusBandId` is stale. |
+| 1.5.4 | Mar 4, 2026 | **Excel import preserves census tiers (§6):** Census band import gains a `color` field; parser reads "Color"/"Tier" column and falls back to sort-order derivation when column is absent. Export includes "Color" column and a Census Bands sheet in the template. **New schedules default to Green (§3.1):** When a new schedule is created, every shift is seeded with `acuityLevel="green"` and the corresponding `censusBandId`, so census-band-aware staffing applies from day one without requiring a Census page visit. |
+| 1.5.5 | Mar 4, 2026 | **Scheduler targets census-band-required count (§12.2, §12.6):** Critical bug fixed — the greedy scheduler and repair phase both use `shift.requiredStaffCount + shift.acuityExtraStaff` from the build context. When a census tier was selected (`censusBandId` set), `acuityExtraStaff` was correctly 0 but `requiredStaffCount` still held the shift definition's base value (e.g. 4 for Day, 3 for Night) rather than the band total (e.g. 5 for Green = 4 RNs + 1 CNA). `buildContext()` now adds a post-load pass that overrides `requiredStaffCount` with `band.requiredRNs + band.requiredCNAs` for every shift with `censusBandId` set, and zeros `acuityExtraStaff`. Scheduler now correctly fills 5 staff per shift when Green tier is active. |
+| 1.5.6 | Mar 4, 2026 | **Output validation utility (§12.6):** `checkForUnexplainedUnderstaffing()` added — a pure function that scans the scheduler's understaffed output and flags any shift where (a) no hard-rule rejection reasons were documented AND (b) enough potentially available staff existed. A non-empty result is a signal of a scheduler logic bug. Called after each Balanced generation; result logged to audit trail. **Tests block build:** `npm run test` added to the build script so all 399 tests must pass before a deployment can proceed. **Seed FK order fixed:** `open_shift`, `generation_job`, and `staff_holiday_assignment` now deleted before their parent tables, fixing a FK constraint error on re-seed when Open Shifts had been used through the UI. |
+| 1.5.7 | Mar 4, 2026 | **On-leave staff displayed with Leave badge in schedule grid (§11):** When leave is approved and an assignment is cancelled (`status = "cancelled"`), the schedule grid now renders that staff member with a strikethrough name, orange dot, and orange "Leave" badge — and excludes them from the shift's staffing count. Previously, cancelled assignments were counted in the X/Y total (showing 5/5 as "full" even though one person was on leave) and rendered identically to active assignments. This masked understaffing created by leave approvals. The hard-violation badge from the rule engine still fires; the count now correctly drops to (N-1)/N so the orange understaffing border appears immediately. |
 
 ---
 
