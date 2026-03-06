@@ -32,7 +32,7 @@ export async function PUT(
       return NextResponse.json({ error: "Scenario not found" }, { status: 404 });
     }
     if (!s.assignmentSnapshot || s.assignmentSnapshot.length === 0) {
-      return NextResponse.json({ error: "Scenario has no assignment snapshot" }, { status: 400 });
+      return NextResponse.json({ error: "Scenario has no assignment snapshot — regenerate the schedule to fix this" }, { status: 400 });
     }
 
     const scheduleId = s.scheduleId;
@@ -42,40 +42,48 @@ export async function PUT(
       .where(eq(assignment.scheduleId, scheduleId))
       .all().length;
 
-    // Delete current assignments
-    db.delete(assignment).where(eq(assignment.scheduleId, scheduleId)).run();
-
-    // Insert snapshot assignments
-    for (const snap of s.assignmentSnapshot) {
-      // Find any shift for this schedule to get scheduleId (snap only has shiftId)
-      db.insert(assignment)
-        .values({
-          shiftId: snap.shiftId,
-          staffId: snap.staffId,
-          scheduleId,
-          status: "assigned",
-          isChargeNurse: snap.isChargeNurse,
-          isOvertime: snap.isOvertime,
-          assignmentSource: "scenario_applied",
-        })
-        .run();
-    }
-
-    // Mark this scenario as selected, others as rejected
     const allScenarios = db
       .select()
       .from(scenario)
       .where(eq(scenario.scheduleId, scheduleId))
       .all();
 
-    for (const other of allScenarios) {
-      db.update(scenario)
-        .set({ status: other.id === id ? "selected" : "rejected" })
-        .where(eq(scenario.id, other.id))
-        .run();
+    try {
+      db.transaction((tx) => {
+        // Delete current assignments
+        tx.delete(assignment).where(eq(assignment.scheduleId, scheduleId)).run();
+
+        // Insert snapshot assignments
+        for (const snap of s.assignmentSnapshot!) {
+          tx.insert(assignment)
+            .values({
+              shiftId: snap.shiftId,
+              staffId: snap.staffId,
+              scheduleId,
+              status: "assigned",
+              isChargeNurse: snap.isChargeNurse,
+              isOvertime: snap.isOvertime,
+              assignmentSource: "scenario_applied",
+            })
+            .run();
+        }
+
+        // Mark this scenario as selected, others as rejected
+        for (const other of allScenarios) {
+          tx.update(scenario)
+            .set({ status: other.id === id ? "selected" : "rejected" })
+            .where(eq(scenario.id, other.id))
+            .run();
+        }
+      });
+    } catch (err) {
+      return NextResponse.json(
+        { error: `Failed to apply scenario: ${String(err)}` },
+        { status: 500 }
+      );
     }
 
-    // Audit entry
+    // Audit entry (outside transaction — non-critical)
     db.insert(exceptionLog)
       .values({
         entityType: "scenario",

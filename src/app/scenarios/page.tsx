@@ -82,6 +82,7 @@ function ScenariosPageContent() {
   const [loading, setLoading] = useState(false);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -150,11 +151,18 @@ function ScenariosPageContent() {
 
   async function handleApply(scenarioId: string) {
     setApplyingId(scenarioId);
-    await fetch(`/api/scenarios/${scenarioId}`, {
+    setApplyError(null);
+    const res = await fetch(`/api/scenarios/${scenarioId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "apply" }),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Unknown error" }));
+      setApplyError(err.error ?? "Failed to apply scenario");
+      setApplyingId(null);
+      return;
+    }
     await fetchScenarios(selectedScheduleId);
     setApplyingId(null);
   }
@@ -247,10 +255,17 @@ function ScenariosPageContent() {
         </div>
       )}
 
-      {/* Error state */}
+      {/* Generation error */}
       {jobStatus?.status === "failed" && (
         <div className="mb-6 rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-700">
           Generation failed: {jobStatus.error}
+        </div>
+      )}
+
+      {/* Apply error */}
+      {applyError && (
+        <div className="mb-6 rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-700">
+          Could not apply scenario: {applyError}
         </div>
       )}
 

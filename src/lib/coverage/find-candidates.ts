@@ -351,14 +351,21 @@ async function findPRNCandidates(
     const isQualified = isHomeUnit || !!(s.crossTrainedUnits?.includes(shiftDetails.unit));
     if (!isQualified) continue;
 
-    // PRN must have marked this date as available
+    // PRN must have marked this date as available.
+    // Build a Set from all records for this staff member (same logic as rule engine)
+    // to guard against JSON-parsing edge cases.
     const prnAvail = db
       .select()
       .from(prnAvailability)
       .where(eq(prnAvailability.staffId, s.id))
       .all();
-    const isDateAvailable = prnAvail.some((a) => a.availableDates?.includes(shiftDetails.date));
-    if (!isDateAvailable) continue;
+    const availableSet = new Set<string>();
+    for (const a of prnAvail) {
+      for (const d of ((a.availableDates as string[]) ?? [])) {
+        availableSet.add(d);
+      }
+    }
+    if (!availableSet.has(shiftDetails.date)) continue;
 
     const availability = await checkStaffAvailability(s.id, shiftDetails);
     if (!availability.available) continue;

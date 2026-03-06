@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.1] - 2026-03-06
+
+### Added
+
+- **Publish / Unpublish button on schedule detail page** (`src/app/schedule/[id]/page.tsx`).
+
+  A **Publish** button now appears in the schedule header alongside "Generate Schedule" and "Re-evaluate". Clicking it changes the schedule status from `draft` to `published` (calls `PUT /api/schedules/[id]`). Once published, the button becomes **Unpublish** to revert to draft. The Publish button is disabled and shows a tooltip ("Fix hard violations before publishing") when any hard violations are present.
+
+### Fixed
+
+- **Apply button in Schedule Variants page silently did nothing** (`src/app/api/scenarios/[id]/route.ts`, `src/app/scenarios/page.tsx`).
+
+  When clicking Apply on the Fairness Optimized or Cost Optimized scenario, the page showed no change. Root cause: the frontend never checked whether the API responded with an error — it always proceeded to re-fetch the unchanged data. Separately, the Apply API performed a delete + batch insert outside a transaction, so any insert failure (unique constraint, FK, etc.) left the assignment table partially empty.
+
+  Fixes:
+  - The delete and all snapshot inserts are now wrapped in `db.transaction()` — if any insert fails, the delete is rolled back and the schedule remains intact.
+  - A `try/catch` around the transaction returns a descriptive `500` on failure instead of crashing silently.
+  - The frontend now checks `res.ok` and displays the error message in a red banner when Apply fails. If the error is a missing snapshot ("regenerate the schedule to fix this"), the message tells the user exactly what to do.
+
+- **PRN nurses shown as callout replacement candidates without verifying availability** (`src/lib/coverage/find-candidates.ts`).
+
+  A per diem nurse could be recommended as a callout replacement even when their `availableDates` did not include the shift date. Root cause: the check used `Array.includes()` on the raw DB value, which can behave unexpectedly when the JSON column is not properly parsed into an array. The rule engine uses a `Set` built by iterating the array with a `for...of` loop — a stricter approach.
+
+  Fix: replaced the `.some((a) => a.availableDates?.includes(date))` check with the same Set-building logic used by the rule engine: iterate all availability records for the staff member, add each date string to a `Set`, then use `.has()` for an exact match. A PRN nurse with no availability records, or one who did not mark the shift date, is now correctly excluded from candidate recommendations.
+
+### Files Modified
+
+- `src/app/api/scenarios/[id]/route.ts` — Apply wrapped in transaction with try/catch; missing snapshot error message improved
+- `src/app/scenarios/page.tsx` — `handleApply` checks response status; error banner shown on failure
+- `src/app/schedule/[id]/page.tsx` — Publish/Unpublish button added to header; disabled on hard violations
+- `src/lib/coverage/find-candidates.ts` — PRN availability check hardened to use Set matching
+
+---
+
 ## [1.6.0] - 2026-03-06
 
 ### Added

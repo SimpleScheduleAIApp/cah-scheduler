@@ -74,6 +74,7 @@ export default function ScheduleBuilderPage() {
   const [violationsModalOpen, setViolationsModalOpen] = useState(false);
   const [selectedShiftForViolations, setSelectedShiftForViolations] = useState<ShiftData | null>(null);
   const [selectedViolations, setSelectedViolations] = useState<RuleViolation[]>([]);
+  const [publishing, setPublishing] = useState(false);
 
   const fetchSchedule = useCallback(async () => {
     const res = await fetch(`/api/schedules/${scheduleId}`);
@@ -126,6 +127,18 @@ export default function ScheduleBuilderPage() {
   function handleShiftClick(shift: ShiftData) {
     setSelectedShift(shift);
     setDialogOpen(true);
+  }
+
+  async function handlePublish() {
+    setPublishing(true);
+    const newStatus = schedule?.status === "published" ? "draft" : "published";
+    await fetch(`/api/schedules/${scheduleId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    await fetchSchedule();
+    setPublishing(false);
   }
 
   function handleViolationsClick(shift: ShiftData, violations: RuleViolation[]) {
@@ -231,6 +244,25 @@ export default function ScheduleBuilderPage() {
           <Button variant="outline" size="sm" onClick={runEvaluation}>
             Re-evaluate
           </Button>
+          {schedule.status !== "published" ? (
+            <Button
+              size="sm"
+              onClick={handlePublish}
+              disabled={publishing || (evaluation !== null && evaluation.hardViolations.length > 0)}
+              title={evaluation && evaluation.hardViolations.length > 0 ? "Fix hard violations before publishing" : undefined}
+            >
+              {publishing ? "Publishing…" : "Publish"}
+            </Button>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handlePublish}
+              disabled={publishing}
+            >
+              {publishing ? "Saving…" : "Unpublish"}
+            </Button>
+          )}
         </div>
       </div>
 
