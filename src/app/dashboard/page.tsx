@@ -22,6 +22,7 @@ interface DashboardData {
   totalSlots: number;
   fillRate: number;
   understaffedShifts: number;
+  overstaffedShifts: number;
   openCallouts: number;
   pendingLeaveCount: number;
   openShiftsCount: number;
@@ -64,7 +65,15 @@ export default function DashboardPage() {
   const allStepsDone = gettingStartedSteps.every((s) => s.done);
   const showGettingStarted = !gettingStartedDismissed && !allStepsDone;
 
-  const attentionItems: { href: string; text: string; urgent: boolean }[] = [
+  const attentionItems: { href: string; text: string; urgent: boolean; info?: boolean }[] = [
+    ...(data.overstaffedShifts > 0 && data.scheduleInfo
+      ? [{
+          href: `/schedule/${data.scheduleInfo.id}`,
+          text: `${data.overstaffedShifts} shift${data.overstaffedShifts > 1 ? "s have" : " has"} excess staff — consider flex-home or VTO`,
+          urgent: false,
+          info: true,
+        }]
+      : []),
     ...(data.pendingLeaveCount > 0
       ? [{ href: "/leave", text: `${data.pendingLeaveCount} leave request${data.pendingLeaveCount > 1 ? "s" : ""} pending approval`, urgent: false }]
       : []),
@@ -197,11 +206,15 @@ export default function DashboardPage() {
                   <Link
                     href={item.href}
                     className={`flex items-center justify-between rounded-md px-3 py-2 text-sm transition-colors hover:bg-accent ${
-                      item.urgent ? "text-orange-700 dark:text-orange-400" : "text-yellow-700 dark:text-yellow-400"
+                      item.urgent
+                        ? "text-orange-700 dark:text-orange-400"
+                        : item.info
+                        ? "text-blue-700 dark:text-blue-400"
+                        : "text-yellow-700 dark:text-yellow-400"
                     }`}
                   >
                     <span className="flex items-center gap-2">
-                      <span className={`h-2 w-2 rounded-full ${item.urgent ? "bg-orange-500" : "bg-yellow-500"}`} />
+                      <span className={`h-2 w-2 rounded-full ${item.urgent ? "bg-orange-500" : item.info ? "bg-blue-500" : "bg-yellow-500"}`} />
                       {item.text}
                     </span>
                     <span className="text-xs text-muted-foreground">→</span>
@@ -214,7 +227,7 @@ export default function DashboardPage() {
       </Card>
 
       {/* Alert cards */}
-      <div className="mb-6 grid grid-cols-4 gap-4">
+      <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <Card>
           <CardContent className="pt-4">
             <p className="text-sm text-muted-foreground">Active Staff</p>
@@ -257,6 +270,22 @@ export default function DashboardPage() {
             </p>
             <p className="text-xs text-muted-foreground">
               of {data.totalShifts} total shifts
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className={data.overstaffedShifts > 0 ? "border-blue-400" : ""}>
+          <CardContent className="pt-4">
+            <p className="text-sm text-muted-foreground">Excess Staff Shifts</p>
+            <p
+              className={`text-2xl font-bold ${
+                data.overstaffedShifts > 0 ? "text-blue-600" : "text-green-600"
+              }`}
+            >
+              {data.overstaffedShifts}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {data.overstaffedShifts > 0 ? "Flex-home candidates" : "Staffing on target"}
             </p>
           </CardContent>
         </Card>

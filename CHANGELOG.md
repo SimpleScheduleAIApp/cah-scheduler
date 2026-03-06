@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.5] - 2026-03-06
+
+### Added
+
+- **Overstaffed shifts on Dashboard** (`src/app/dashboard/page.tsx`, `src/app/api/dashboard/route.ts`).
+
+  The Dashboard now surfaces shifts where assigned active staff exceed the census-tier-required count:
+
+  - **"Excess Staff Shifts" stat card** — shown in the metrics row alongside Understaffed Shifts and Open Callouts. Displays the count in blue when non-zero, green when all shifts are on target.
+  - **"Needs Attention" alert** — when any overstaffed shifts exist, a blue-dot entry appears at the top of the Needs Attention list: *"X shift(s) have excess staff — consider flex-home or VTO"*, linking directly to the schedule grid where the manager can open any blue-bordered cell to see ranked flex-home recommendations.
+
+  The API already computed `understaffedShifts` by iterating every shift with the same census-band-aware `getEffectiveRequired()` logic. The same loop now counts overstaffed shifts (`assigned > required`) in parallel at no additional query cost.
+
+### Files Modified
+
+- `src/app/api/dashboard/route.ts` — added `overstaffedShifts` counter in the staffing loop; added field to API response
+- `src/app/dashboard/page.tsx` — added `overstaffedShifts` to `DashboardData` interface; blue-dot Needs Attention item; "Excess Staff Shifts" stat card; grid changed to responsive 5-column layout
+
+---
+
 ## [1.6.4] - 2026-03-06
 
 ### Added

@@ -129,11 +129,12 @@ When import completes, the page shows a success screen with:
 - **Current Schedule card** — Full-width card at the top showing the active schedule name, status, date range, and fill rate. Includes a direct button to open the Schedule Builder.
 - **Getting Started checklist** — Appears on first use (amber card) until three setup steps are complete: import staff, configure units, create a schedule. Dismissible once you've read it.
 - **Needs Attention** — Live alert row that flags items requiring action:
+  - **Shifts with excess staff** (blue dot) — one or more shifts have more active staff than the census tier requires; click the alert to open the schedule grid and use the assignment dialog's flex-home suggestions to decide who to release
   - Pending leave requests
   - Open shifts needing coverage
   - PRN staff who haven't submitted availability
   - Current schedule ending within 7 days (when no next period exists yet)
-- **Metric cards** — Staff count, fill rate, understaffed shifts, open callouts, and more.
+- **Metric cards** — Staff count, fill rate, understaffed shifts, **excess-staff shifts**, and open callouts.
 
 ### Common Tasks
 

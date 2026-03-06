@@ -26,6 +26,7 @@ export async function GET() {
     .get();
 
   let understaffedShifts = 0;
+  let overstaffedShifts = 0;
   let totalShifts = 0;
   let totalAssignments = 0;
   let totalSlots = 0;
@@ -97,6 +98,7 @@ export async function GET() {
       const assigned = activeCountByShift.get(s.id) ?? 0;
       totalAssignments += assigned;
       if (assigned < required) understaffedShifts++;
+      else if (assigned > required) overstaffedShifts++;
     }
   }
 
@@ -189,6 +191,7 @@ export async function GET() {
     totalSlots,
     fillRate: totalSlots > 0 ? Math.round((totalAssignments / totalSlots) * 100) : 0,
     understaffedShifts,
+    overstaffedShifts,
     openCallouts: openCallouts.length,
     pendingLeaveCount,
     openShiftsCount,
