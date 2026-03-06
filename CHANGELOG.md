@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.2] - 2026-03-06
+
+### Added
+
+- **Schedule Excel export** (`src/app/api/schedules/[id]/export/route.ts`, `src/app/schedule/[id]/page.tsx`).
+
+  An **Export** button now appears in the schedule detail page header. Clicking it downloads a `.xlsx` workbook with three sheets:
+
+  - **Schedule Grid** — rows = dates, columns = shift names. Each cell lists all assigned nurses for that date+shift, with ★ prefixed for the charge nurse. Works for both draft and published schedules.
+  - **Leave & Callouts** — all leave records for staff during the schedule period, plus any callout records for shifts in the schedule. Shows leave type, date range, status, and reason.
+  - **Per-Staff List** — every assignment sorted by staff name then date, with shift name, start/end time, charge nurse flag, and overtime flag. Suitable for distributing individual schedules or importing into payroll systems.
+
+  Column widths are pre-set so the file is readable without manual adjustment. The file is named after the schedule (e.g. `ICU-2nd-Mar-2026-schedule.xlsx`).
+
+- **Audit trail CSV fix** (`src/app/audit/page.tsx`).
+
+  Three bugs corrected in the Export CSV function:
+
+  1. **Timestamp comma** — `toLocaleString()` returned locale-specific strings like "6/3/2026, 4:23:37 pm" whose comma pushed all subsequent columns right. Fixed: `toISOString().slice(0,19).replace("T"," ")` produces `2026-03-06 16:12:19` (no comma, UTC, sortable).
+  2. **Unquoted fields** — Action, Entity, and Performed By were not quoted, so values containing commas would break column alignment. Fixed: every field is now wrapped with `csvField()` which double-escapes internal quotes.
+  3. **Encoding** — no UTF-8 BOM caused em dashes and other Unicode characters to render as mojibake in Excel. Fixed: `\uFEFF` prepended to the blob content. Line endings changed to CRLF (`\r\n`) per Windows CSV convention.
+
+### Files Modified
+
+- `src/app/api/schedules/[id]/export/route.ts` — new file; Excel export endpoint
+- `src/app/schedule/[id]/page.tsx` — Export button added; `handleExport()` function
+- `src/app/audit/page.tsx` — `exportToCsv()` timestamp, quoting, and BOM fixed
+
+---
+
 ## [1.6.1] - 2026-03-06
 
 ### Added

@@ -141,6 +141,13 @@ export default function ScheduleBuilderPage() {
     setPublishing(false);
   }
 
+  function handleExport() {
+    const a = document.createElement("a");
+    a.href = `/api/schedules/${scheduleId}/export`;
+    a.download = "";
+    a.click();
+  }
+
   function handleViolationsClick(shift: ShiftData, violations: RuleViolation[]) {
     setSelectedShiftForViolations(shift);
     setSelectedViolations(violations);
@@ -243,6 +250,9 @@ export default function ScheduleBuilderPage() {
           </Button>
           <Button variant="outline" size="sm" onClick={runEvaluation}>
             Re-evaluate
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            Export
           </Button>
           {schedule.status !== "published" ? (
             <Button

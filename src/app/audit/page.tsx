@@ -74,18 +74,22 @@ const actionColors: Record<string, BadgeVariant> = {
   schedule_auto_generated: "secondary",
 };
 
+function csvField(value: string): string {
+  return `"${value.replace(/"/g, '""')}"`;
+}
+
 function exportToCsv(logs: AuditEntry[]) {
-  const header = ["Time", "Action", "Entity", "Description", "Justification", "By"];
+  const header = ["Time (UTC)", "Action", "Entity", "Description", "Justification", "By"];
   const rows = logs.map((e) => [
-    new Date(e.createdAt).toLocaleString(),
+    new Date(e.createdAt).toISOString().slice(0, 19).replace("T", " "),
     actionLabels[e.action] ?? e.action,
     e.entityType,
-    `"${e.description.replace(/"/g, '""')}"`,
-    e.justification ? `"${e.justification.replace(/"/g, '""')}"` : "",
+    e.description,
+    e.justification ?? "",
     e.performedBy,
-  ]);
-  const csv = [header, ...rows].map((r) => r.join(",")).join("\n");
-  const blob = new Blob([csv], { type: "text/csv" });
+  ].map(csvField));
+  const csv = "\uFEFF" + [header.map(csvField), ...rows].map((r) => r.join(",")).join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

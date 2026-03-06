@@ -201,7 +201,8 @@ Required information:
 | Add an assignment | Click any shift to open the assignment dialog |
 | Remove an assignment | Open the shift dialog, click "Remove" next to the staff member |
 | **Generate schedule automatically** | Click **"Generate Schedule"** button in the top-right |
-| Publish schedule | Click "Publish" button |
+| Publish schedule | Click **"Publish"** button |
+| **Export schedule to Excel** | Click **"Export"** button — downloads a ready-to-distribute `.xlsx` file |
 
 ### The Assignment Dialog
 
@@ -246,7 +247,21 @@ The dialog defaults to the unit used in your most recent non-archived schedule, 
 5. Make manual adjustments if needed
         ↓
 6. Publish (make visible to staff)
+        ↓
+7. Click "Export" to download the schedule as an Excel file for distribution
 ```
+
+### Exporting the Schedule
+
+Click **"Export"** in the schedule header to download a `.xlsx` file. The file contains three sheets:
+
+| Sheet | Contents |
+|-------|----------|
+| **Schedule Grid** | Dates as rows, shift names as columns. Each cell lists the nurses assigned (★ = charge nurse). Easy to print or share. |
+| **Leave & Callouts** | All approved leave overlapping this schedule period, plus any callouts logged for shifts in this schedule. Shows leave type, dates, and status. |
+| **Per-Staff List** | Every assignment sorted by staff name then date, with shift name, start/end time, and charge/overtime flags. Useful for distributing individual schedules or importing into payroll. |
+
+The export works on both draft and published schedules. Column widths are pre-set so the file is readable without manual adjustment.
 
 ---
 
@@ -665,7 +680,7 @@ If no target staff was selected, approving the request:
 | Find a specific action | Use the **Action** filter |
 | Narrow to a date range | Set the **From** and **To** date pickers, then click Clear to reset |
 | See entries you just created without navigating away | Click **Refresh** in the top-right corner |
-| Download for a staffing committee | Click **Export CSV** in the top-right corner |
+| Download for a staffing committee | Click **Export CSV** in the top-right corner — downloads a UTF-8 Excel-compatible CSV with UTC timestamps |
 
 ### Why Use Audit Trail?
 
@@ -689,6 +704,7 @@ If no target staff was selected, approving the request:
 5. Review score cards; click "Apply" on your preferred variant
 6. Return to Schedule, make any manual adjustments
 7. Click "Publish"
+8. Click "Export" to download the schedule as an Excel file for distribution
 ```
 
 ### Handling a Same-Day Callout
