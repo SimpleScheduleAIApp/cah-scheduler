@@ -36,27 +36,21 @@ const LA_BUFFER_SIZE = 200;
 
 /**
  * Compute a proxy total penalty from a flat list of assignments.
- * Rebuilds an in-memory state and sums individual assignment penalties.
+ * Accepts a pre-built SchedulerState — callers are responsible for keeping
+ * it in sync with `assignments`. This eliminates the O(A²) rebuild on every call.
  */
 function computeTotalPenalty(
   assignments: AssignmentDraft[],
+  state: SchedulerState,
   context: SchedulerContext,
   weights: WeightProfile
 ): number {
-  // Build state from scratch
-  const state = new SchedulerState();
-  for (const a of assignments) {
-    state.addAssignment(a);
-  }
-
   let total = 0;
   for (const a of assignments) {
     const staffInfo = context.staffMap.get(a.staffId);
-    const shiftInfo = context.shifts.find((s) => s.id === a.shiftId);
+    const shiftInfo = context.shiftMap.get(a.shiftId);
     if (!staffInfo || !shiftInfo) continue;
 
-    // Temporarily remove this assignment from state to compute the marginal penalty
-    // (approximate: we use the full-state penalty for simplicity)
     const currentShiftAssignments = assignments.filter(
       (x) => x.shiftId === a.shiftId && x.staffId !== a.staffId
     );
@@ -78,10 +72,11 @@ function computeTotalPenalty(
 
 /**
  * Quick hard-rule check for a proposed swap.
- * Only checks the constraints that are affected by changing which shift a staff
- * member is assigned to — not the full SchedulerState rebuild.
+ * Accepts the current SchedulerState, clones it, removes the two assignments,
+ * then checks hard rules — eliminating the O(A) full-array rebuild.
  */
 function isSwapValid(
+  currentState: SchedulerState,
   allAssignments: AssignmentDraft[],
   indexA: number,
   indexB: number,
@@ -92,30 +87,23 @@ function isSwapValid(
 
   const staffA = context.staffMap.get(a.staffId);
   const staffB = context.staffMap.get(b.staffId);
-  const shiftA = context.shifts.find((s) => s.id === a.shiftId);
-  const shiftB = context.shifts.find((s) => s.id === b.shiftId);
+  const shiftA = context.shiftMap.get(a.shiftId);
+  const shiftB = context.shiftMap.get(b.shiftId);
 
   if (!staffA || !staffB || !shiftA || !shiftB) return false;
 
-  // Build a temporary state excluding the two assignments being swapped
-  const remaining = allAssignments.filter((_, i) => i !== indexA && i !== indexB);
-  const tempState = new SchedulerState();
-  for (const r of remaining) tempState.addAssignment(r);
+  // Clone current state and remove the two assignments being swapped
+  const tempState = currentState.clone();
+  tempState.removeAssignment(a);
+  tempState.removeAssignment(b);
 
   // ── Collective constraint checks ────────────────────────────────────────────
 
   // Guard 1: Charge-slot integrity.
-  // isChargeNurse is a SLOT property (spread via {...a}). If staffB would inherit
-  // a charge slot but is not charge-qualified Level 4+, the assignment becomes
-  // invalid without any individual hard-rule check catching it.
   if (a.isChargeNurse && (!staffB.isChargeNurseQualified || staffB.icuCompetencyLevel < 4)) return false;
   if (b.isChargeNurse && (!staffA.isChargeNurseQualified || staffA.icuCompetencyLevel < 4)) return false;
 
   // Guard 2: Level 2 supervision.
-  // passesHardRules checks whether the INCOMING staff can be placed on a shift,
-  // not whether REMOVING someone breaks supervision for staff already there.
-  // If staffA (Level 4+) leaves shiftA and shiftA still has Level 2 nurses,
-  // shiftA must retain at least one other Level 4+ or the incoming staffB must be Level 4+.
   if (isICUUnit(shiftA.unit)) {
     const remainingOnA = tempState.getShiftAssignments(shiftA.id);
     const hasLevel2OnA = remainingOnA.some(
@@ -143,9 +131,7 @@ function isSwapValid(
 
   // ── Individual eligibility checks ────────────────────────────────────────────
 
-  // Check: staffA → shiftB, staffB → shiftA
   if (!passesHardRules(staffA, shiftB, tempState, context)) return false;
-  // Add staffA to shiftB temporarily for staffB check
   const draftA: AssignmentDraft = {
     ...a,
     shiftId: shiftB.id,
