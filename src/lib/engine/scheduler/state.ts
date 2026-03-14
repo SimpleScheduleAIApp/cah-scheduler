@@ -50,12 +50,9 @@ export class SchedulerState {
   private workedDatesByStaff = new Map<string, Set<string>>();
 
   addAssignment(draft: AssignmentDraft): void {
-    // Staff list (kept sorted by date for binary-search-ability later)
+    // Staff list
     const staffList = this.assignmentsByStaff.get(draft.staffId) ?? [];
     staffList.push(draft);
-    staffList.sort((a, b) =>
-      a.date < b.date ? -1 : a.date > b.date ? 1 : a.startTime < b.startTime ? -1 : 1
-    );
     this.assignmentsByStaff.set(draft.staffId, staffList);
 
     // Shift list
@@ -67,6 +64,29 @@ export class SchedulerState {
     const dates = this.workedDatesByStaff.get(draft.staffId) ?? new Set<string>();
     dates.add(draft.date);
     this.workedDatesByStaff.set(draft.staffId, dates);
+  }
+
+  removeAssignment(draft: AssignmentDraft): void {
+    // Remove from assignmentsByStaff
+    const staffList = this.assignmentsByStaff.get(draft.staffId);
+    if (staffList) {
+      const idx = staffList.findIndex((a) => a.shiftId === draft.shiftId);
+      if (idx !== -1) staffList.splice(idx, 1);
+    }
+
+    // Remove from assignmentsByShift
+    const shiftList = this.assignmentsByShift.get(draft.shiftId);
+    if (shiftList) {
+      const idx = shiftList.findIndex((a) => a.staffId === draft.staffId);
+      if (idx !== -1) shiftList.splice(idx, 1);
+    }
+
+    // Update workedDatesByStaff — only remove the date if no other assignment
+    // for this staff on this date remains
+    const remaining = this.assignmentsByStaff.get(draft.staffId) ?? [];
+    if (!remaining.some((a) => a.date === draft.date)) {
+      this.workedDatesByStaff.get(draft.staffId)?.delete(draft.date);
+    }
   }
 
   getStaffAssignments(staffId: string): AssignmentDraft[] {
