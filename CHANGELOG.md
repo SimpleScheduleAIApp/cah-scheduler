@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.6] - 2026-03-10
+
+### Fixed
+
+- **Setup page sheet count** (`src/app/setup/page.tsx`): The helper text under "Download Template" incorrectly stated the template contained 3 sheets. Updated to correctly list all 5 sheets: Staff, Units, Holidays, Census Bands, and Staff Leave. Census Bands and Staff Leave were added in v1.4.6 and v1.5.0 respectively but the UI label was never updated.
+
+- **Docs: missing Census Bands sheet** (`docs/09-using-the-app.md`): The Excel Template Sheets section listed only 4 sheets and omitted Census Bands entirely. Added Sheet 4 (Census Bands) with its fields. Also corrected the "First time setup" description and the export workflow step to include Census Bands.
+
+### Files Modified
+
+- `src/app/setup/page.tsx` — updated sheet count label from 3 to 5; listed all sheet names
+- `docs/09-using-the-app.md` — added Census Bands as Sheet 4; corrected first-time setup description and export workflow copy
+
+---
+
 ## [1.6.5] - 2026-03-06
 
 ### Added

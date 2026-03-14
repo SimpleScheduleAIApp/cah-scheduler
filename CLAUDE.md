@@ -229,6 +229,15 @@ Full specification: `RULES_SPECIFICATION.md`
 
 ---
 
+## Context Compaction
+
+When context is compacted, always preserve:
+- Current file paths being edited
+- Test failure messages
+- Architecture decisions made this session
+
+---
+
 ## Working Style Preferences
 
 - **Ground all suggestions in real-world nursing and hospital operations.** Before proposing any algorithm change, penalty weight, rule threshold, or workflow adjustment, reason through how it would play out in an actual hospital — consider payroll costs, staff fatigue, charge nurse responsibilities, and what a scheduling manager would naturally do. If a suggestion does not hold up to that test, revise it or flag the concern before implementing.

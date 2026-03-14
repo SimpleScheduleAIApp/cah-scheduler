@@ -193,7 +193,7 @@ export default function SetupPage() {
             Download Template (.xlsx)
           </Button>
           <p className="mt-3 text-sm text-muted-foreground">
-            The template contains 3 sheets: <strong>Staff</strong>, <strong>Units</strong>, and <strong>Holidays</strong>
+            The template contains 5 sheets: <strong>Staff</strong>, <strong>Units</strong>, <strong>Holidays</strong>, <strong>Census Bands</strong>, and <strong>Staff Leave</strong>
           </p>
         </CardContent>
       </Card>

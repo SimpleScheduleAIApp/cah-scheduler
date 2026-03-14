@@ -32,7 +32,7 @@ Here's every page in the application and what you can do on each.
 
 ### When to Use This Page
 
-- **First time setup** - Import all your staff, units, and holidays at once
+- **First time setup** - Import all your staff, units, holidays, census bands, and leave at once
 - **Bulk updates** - Export current data, edit in Excel, and re-import
 - **Reset** - Upload a new Excel file to replace all existing data
 
@@ -46,7 +46,7 @@ Here's every page in the application and what you can do on each.
 ### The Export → Edit → Import Workflow
 
 ```
-1. Click "Download Data" (exports current Staff, Units, Holidays, Staff Leave)
+1. Click "Download Data" (exports current Staff, Units, Holidays, Census Bands, Staff Leave)
         ↓
 2. Edit in Excel (add rows, remove rows, change values)
         ↓
@@ -85,7 +85,14 @@ Here's every page in the application and what you can do on each.
 - Name (required) - e.g., Christmas Day
 - Date (required) - e.g., 2026-12-25
 
-**Sheet 4: Staff Leave** (optional)
+**Sheet 4: Census Bands** (optional)
+- Unit (required) - must match a unit name in the Units sheet
+- Color (required): blue, green, yellow, or red
+- Min Patients, Max Patients (required) - patient count range for this tier
+- Required RNs, Required CNAs (required) - staffing targets for this census level
+- Sort Order (optional): display order (1 = lowest census)
+
+**Sheet 5: Staff Leave** (optional)
 - First Name, Last Name (required — must match a staff member in the Staff sheet)
 - Leave Type (required): vacation, sick, maternity, medical, personal, bereavement, or other
 - Start Date, End Date (required): YYYY-MM-DD format
