@@ -19,6 +19,7 @@ export function buildSchedulerContext(scheduleId: string): SchedulerContext {
   return {
     scheduleId,
     shifts,
+    shiftMap: ruleContext.shiftMap,
     staffList,
     staffMap: ruleContext.staffMap,
     prnAvailability: ruleContext.prnAvailability,

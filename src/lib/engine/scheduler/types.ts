@@ -54,6 +54,8 @@ export interface SchedulerContext {
   scheduleId: string;
   /** All shift slots that need to be filled */
   shifts: ShiftInfo[];
+  /** Shift lookup by ID — O(1) alternative to shifts.find() */
+  shiftMap: Map<string, ShiftInfo>;
   /** Flat list of all active staff */
   staffList: StaffInfo[];
   /** Staff lookup by ID */
