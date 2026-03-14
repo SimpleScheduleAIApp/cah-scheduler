@@ -181,7 +181,12 @@ export function localSearch(
   const rand = mulberry32(seed);
 
   let assignments = [...result.assignments];
-  let currentPenalty = computeTotalPenalty(assignments, context, weights);
+
+  // Build state once — updated incrementally on every accepted swap
+  let state = new SchedulerState();
+  for (const a of assignments) state.addAssignment(a);
+
+  let currentPenalty = computeTotalPenalty(assignments, state, context, weights);
 
   // Late Acceptance circular buffer — stores penalties of past solutions
   const laBuffer = new Array<number>(LA_BUFFER_SIZE).fill(currentPenalty);
@@ -202,13 +207,13 @@ export function localSearch(
     }
     if (j === i || assignments[i].shiftId === assignments[j].shiftId) continue;
 
-    if (!isSwapValid(assignments, i, j, context)) continue;
+    if (!isSwapValid(state, assignments, i, j, context)) continue;
 
     // Build the swapped assignment list
     const a = assignments[i];
     const b = assignments[j];
-    const shiftA = context.shifts.find((s) => s.id === a.shiftId)!;
-    const shiftB = context.shifts.find((s) => s.id === b.shiftId)!;
+    const shiftA = context.shiftMap.get(a.shiftId)!;
+    const shiftB = context.shiftMap.get(b.shiftId)!;
     const staffA = context.staffMap.get(a.staffId)!;
     const staffB = context.staffMap.get(b.staffId)!;
 
@@ -231,11 +236,19 @@ export function localSearch(
     swapped[i] = newA;
     swapped[j] = newB;
 
-    const newPenalty = computeTotalPenalty(swapped, context, weights);
+    // Build candidate state incrementally
+    const candidateState = state.clone();
+    candidateState.removeAssignment(a);
+    candidateState.removeAssignment(b);
+    candidateState.addAssignment(newA);
+    candidateState.addAssignment(newB);
+
+    const newPenalty = computeTotalPenalty(swapped, candidateState, context, weights);
 
     // Late Acceptance: accept if no worse than K iterations ago
     if (newPenalty <= laBuffer[laIdx]) {
       assignments = swapped;
+      state = candidateState;
       currentPenalty = newPenalty;
 
       if (newPenalty < bestPenalty) {
@@ -288,7 +301,12 @@ export function overtimeReductionSweep(
   weights: WeightProfile
 ): AssignmentDraft[] {
   let assignments = [...initialAssignments];
-  let currentPenalty = computeTotalPenalty(assignments, context, weights);
+
+  // Build state once — updated incrementally on each accepted swap
+  let state = new SchedulerState();
+  for (const a of assignments) state.addAssignment(a);
+
+  let currentPenalty = computeTotalPenalty(assignments, state, context, weights);
   let madeProgress = true;
 
   while (madeProgress) {
@@ -305,12 +323,12 @@ export function overtimeReductionSweep(
       for (let j = 0; j < assignments.length; j++) {
         if (j === otIdx) continue;
         if (assignments[otIdx].shiftId === assignments[j].shiftId) continue;
-        if (!isSwapValid(assignments, otIdx, j, context)) continue;
+        if (!isSwapValid(state, assignments, otIdx, j, context)) continue;
 
         const a = assignments[otIdx];
         const b = assignments[j];
-        const shiftA = context.shifts.find((s) => s.id === a.shiftId)!;
-        const shiftB = context.shifts.find((s) => s.id === b.shiftId)!;
+        const shiftA = context.shiftMap.get(a.shiftId)!;
+        const shiftB = context.shiftMap.get(b.shiftId)!;
         const staffA = context.staffMap.get(a.staffId)!;
         const staffB = context.staffMap.get(b.staffId)!;
 
@@ -337,9 +355,16 @@ export function overtimeReductionSweep(
         swapped[otIdx] = newA;
         swapped[j] = newB;
 
-        const newPenalty = computeTotalPenalty(swapped, context, weights);
+        const candidateState = state.clone();
+        candidateState.removeAssignment(a);
+        candidateState.removeAssignment(b);
+        candidateState.addAssignment(newA);
+        candidateState.addAssignment(newB);
+
+        const newPenalty = computeTotalPenalty(swapped, candidateState, context, weights);
         if (newPenalty < currentPenalty) {
           assignments = swapped;
+          state = candidateState;
           currentPenalty = newPenalty;
           madeProgress = true;
           break outer; // restart sweep with updated state
@@ -369,7 +394,12 @@ export function weekendRedistributionSweep(
   weights: WeightProfile
 ): AssignmentDraft[] {
   let assignments = [...initialAssignments];
-  let currentPenalty = computeTotalPenalty(assignments, context, weights);
+
+  // Build state once — updated incrementally on each accepted swap
+  let state = new SchedulerState();
+  for (const a of assignments) state.addAssignment(a);
+
+  let currentPenalty = computeTotalPenalty(assignments, state, context, weights);
   let madeProgress = true;
 
   while (madeProgress) {
@@ -414,12 +444,12 @@ export function weekendRedistributionSweep(
         if (j === exIdx) continue;
         if (assignments[exIdx].shiftId === assignments[j].shiftId) continue;
         if (!deficitStaffIds.has(assignments[j].staffId)) continue;
-        if (!isSwapValid(assignments, exIdx, j, context)) continue;
+        if (!isSwapValid(state, assignments, exIdx, j, context)) continue;
 
         const a = assignments[exIdx];
         const b = assignments[j];
-        const shiftA = context.shifts.find((s) => s.id === a.shiftId)!;
-        const shiftB = context.shifts.find((s) => s.id === b.shiftId)!;
+        const shiftA = context.shiftMap.get(a.shiftId)!;
+        const shiftB = context.shiftMap.get(b.shiftId)!;
         const staffA = context.staffMap.get(a.staffId)!;
         const staffB = context.staffMap.get(b.staffId)!;
 
@@ -446,9 +476,16 @@ export function weekendRedistributionSweep(
         swapped[exIdx] = newA;
         swapped[j] = newB;
 
-        const newPenalty = computeTotalPenalty(swapped, context, weights);
+        const candidateState = state.clone();
+        candidateState.removeAssignment(a);
+        candidateState.removeAssignment(b);
+        candidateState.addAssignment(newA);
+        candidateState.addAssignment(newB);
+
+        const newPenalty = computeTotalPenalty(swapped, candidateState, context, weights);
         if (newPenalty < currentPenalty) {
           assignments = swapped;
+          state = candidateState;
           currentPenalty = newPenalty;
           madeProgress = true;
           break outer; // restart sweep with updated counts
