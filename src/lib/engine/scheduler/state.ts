@@ -70,7 +70,9 @@ export class SchedulerState {
     // Remove from assignmentsByStaff
     const staffList = this.assignmentsByStaff.get(draft.staffId);
     if (staffList) {
-      const idx = staffList.findIndex((a) => a.shiftId === draft.shiftId);
+      const idx = staffList.findIndex(
+        (a) => a.shiftId === draft.shiftId && a.date === draft.date && a.startTime === draft.startTime
+      );
       if (idx !== -1) staffList.splice(idx, 1);
     }
 
