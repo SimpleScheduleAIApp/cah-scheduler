@@ -144,44 +144,47 @@ function writeAssignments(
     holidayDateToName.set(h.date, getLogicalHolidayName(h.name));
   }
 
-  for (const draft of drafts) {
-    const id = crypto.randomUUID();
+  const doInserts = db.transaction(() => {
+    for (const draft of drafts) {
+      const id = crypto.randomUUID();
 
-    db.insert(assignment)
-      .values({
-        id,
-        shiftId: draft.shiftId,
-        staffId: draft.staffId,
-        scheduleId,
-        status: "assigned",
-        isChargeNurse: draft.isChargeNurse,
-        isOvertime: draft.isOvertime,
-        isFloat: draft.isFloat,
-        floatFromUnit: draft.floatFromUnit,
-        assignmentSource: "auto_generated",
-      })
-      .run();
+      db.insert(assignment)
+        .values({
+          id,
+          shiftId: draft.shiftId,
+          staffId: draft.staffId,
+          scheduleId,
+          status: "assigned",
+          isChargeNurse: draft.isChargeNurse,
+          isOvertime: draft.isOvertime,
+          isFloat: draft.isFloat,
+          floatFromUnit: draft.floatFromUnit,
+          assignmentSource: "auto_generated",
+        })
+        .run();
 
-    // Holiday tracking
-    const logicalHoliday = holidayDateToName.get(draft.date);
-    if (logicalHoliday) {
-      const year = new Date(draft.date).getFullYear();
-      // Upsert-style: insert only if this staff/holiday/year doesn't already exist
-      try {
-        db.insert(staffHolidayAssignment)
-          .values({
-            staffId: draft.staffId,
-            holidayName: logicalHoliday,
-            year,
-            shiftId: draft.shiftId,
-            assignmentId: id,
-          })
-          .run();
-      } catch {
-        // Ignore unique constraint violation (staff already has this holiday tracked)
+      // Holiday tracking
+      const logicalHoliday = holidayDateToName.get(draft.date);
+      if (logicalHoliday) {
+        const year = new Date(draft.date).getFullYear();
+        // Upsert-style: insert only if this staff/holiday/year doesn't already exist
+        try {
+          db.insert(staffHolidayAssignment)
+            .values({
+              staffId: draft.staffId,
+              holidayName: logicalHoliday,
+              year,
+              shiftId: draft.shiftId,
+              assignmentId: id,
+            })
+            .run();
+        } catch {
+          // Ignore unique constraint violation (staff already has this holiday tracked)
+        }
       }
     }
-  }
+  });
+  doInserts();
 }
 
 // ─── Main runner ──────────────────────────────────────────────────────────────
