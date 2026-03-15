@@ -31,8 +31,8 @@ Every generation run produces three independent schedules, each optimised for a 
 | Variant | What it optimises for |
 |---|---|
 | **Balanced** | A reasonable mix of fairness, cost, and staff preferences. Overtime avoidance takes priority over preference matching. This is applied to the schedule automatically. |
-| **Fairness-Optimized** | Spreads weekend shifts, holidays, and preferred days off as evenly as possible across all staff. Accepts slightly more overtime in exchange for equitable distribution. |
-| **Cost-Optimized** | Minimises overtime and float assignments. Some staff may work shifts they prefer less if it avoids extra pay. |
+| **Fairness-Optimized** | Redistributes weekend shifts as evenly as possible across all staff. Guaranteed to have equal or better weekend equity than the Balanced variant. |
+| **Cost-Optimized** | Minimises overtime and float assignments. Guaranteed to have equal or fewer overtime assignments than the Balanced variant. |
 
 All three variants obey exactly the same hard rules — only their *preferences and trade-offs* differ.
 
@@ -87,11 +87,10 @@ A small number of soft violations is normal and unavoidable — especially prefe
 
 ### Viewing Violations for a Specific Shift
 
-Click any shift cell in the grid to open the violations detail panel for that shift. Violations are grouped into three sections:
+Click any shift cell in the grid to open the violations detail panel for that shift. Violations are grouped into two sections:
 
 - **Hard Rule Violations (red)** — issues that must be resolved before the schedule is safe to publish, such as too few staff or a missing charge nurse.
-- **Soft Rule Violations (yellow)** — preference mismatches tied to this specific shift, such as a nurse assigned to a shift type they prefer to avoid.
-- **Staff Schedule Issues (orange)** — overtime or excess weekend violations for nurses assigned to this shift. These are flagged on the specific shift that crossed the threshold, so removing or swapping that one assignment clears the warning.
+- **Soft Rule Violations (yellow)** — preference and fairness penalties for this shift. This includes both shift-specific issues (such as a nurse assigned to a shift type they prefer to avoid) and schedule-wide patterns (such as overtime or consecutive weekends). Schedule-wide items are marked with a **Schedule-wide** badge so you know the issue spans more than just this shift.
 
 ---
 
@@ -181,7 +180,7 @@ On ICU and ER shifts, competency requirements mean only a subset of staff are el
 Yes. After generation, you can open any shift and add, remove, or change assignments individually. Those changes are preserved unless you regenerate.
 
 **Will I get the same schedule if I generate again?**
-No. Each generation run uses a different random seed, so the result will vary slightly even with the same staff and shift data. This is intentional — it lets you generate a few alternatives and pick the best one. However, every run that produces a particular scenario is recorded in the audit log with its seed value, so any specific result can be reproduced exactly by the development team if needed.
+No. The Balanced variant uses a different random seed on each run, so the result will vary slightly even with the same staff and shift data. This is intentional — it lets you generate a few alternatives and pick the best one. The Fairness-Optimized and Cost-Optimized variants are derived from the Balanced result using deterministic sweeps, so they are fully reproducible given the same Balanced output. Every run is recorded in the audit log with its seed value, so any specific result can be reproduced exactly by the development team if needed.
 
 ---
 

@@ -148,9 +148,17 @@ export function greedyConstruct(
         );
 
         if (eligible.length > 0) {
-          // Prefer Level 5 (primary charge) over Level 4 (stand-in charge when no Level 5 available)
-          const level5Pool = eligible.filter((s) => s.icuCompetencyLevel === 5);
-          const topTier = level5Pool.length > 0 ? level5Pool : eligible;
+          // Prefer non-OT candidates first — avoids concentrating charge duty on a single
+          // Level 5 nurse who is already running at full weekly capacity. Level 4 stand-ins
+          // are used once Level 5 nurses would exceed the 40h target.
+          const nonOTCharge = eligible.filter(
+            (s) => state.getWeeklyHours(s.id, shift.date) + shift.durationHours <= 40
+          );
+          const chargePool = nonOTCharge.length > 0 ? nonOTCharge : eligible;
+
+          // Within the non-OT pool, still prefer Level 5 (primary charge) over Level 4 (stand-in)
+          const level5Pool = chargePool.filter((s) => s.icuCompetencyLevel === 5);
+          const topTier = level5Pool.length > 0 ? level5Pool : chargePool;
           const currentSlotAssignments = state.getShiftAssignments(shift.id);
           const best = pickBest(
             topTier,

@@ -3,6 +3,8 @@ import type { AssignmentDraft, WeightProfile } from "./types";
 import { SchedulerState } from "./state";
 import { isICUUnit } from "./eligibility";
 
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
 /**
  * Computes the soft-rule penalty score for assigning `staffInfo` to `shiftInfo`
  * given the current scheduler state.
@@ -58,7 +60,7 @@ export function softPenalty(
       penalty += weights.preference * 0.5;
     }
 
-    const dayName = new Date(shiftInfo.date).toLocaleDateString("en-US", { weekday: "long" });
+    const dayName = DAY_NAMES[new Date(shiftInfo.date).getDay()];
     if (preferredDaysOff.includes(dayName)) {
       penalty += weights.preference * 0.7;
     }
@@ -92,6 +94,83 @@ export function softPenalty(
       // At or above quota: penalise; penalty grows with how far over they already are
       const excess = weekendCount - required;
       penalty += weights.weekendCount * (0.4 + excess * 0.3);
+    }
+  }
+
+  // ── 3b. Consecutive weekend penalty ─────────────────────────────────────────
+  // Penalise assigning a weekend shift that would push this staff member's
+  // consecutive-weekend streak past the unit maximum (default 2).
+  //
+  // Guard: only fires when staff is AT or ABOVE weekend quota. If they are
+  // below quota, section 3 already gives a bonus to assign them weekends;
+  // applying a consecutive penalty here would cancel that bonus and make
+  // fairness worse, not better.
+  //
+  // Implementation: O(maxConsecutive) bounded backward/forward date checks
+  // using hasWorkedDate() (O(1) Set lookup) — avoids the O(n) full-assignment
+  // scan that caused the 14.7× regression on 28-day schedules.
+  if (isWeekendShift && !staffInfo.weekendExempt) {
+    const required = unitConfig?.weekendShiftsRequired ?? 3;
+    const historicalWeekends = historicalWeekendCounts.get(staffInfo.id) ?? 0;
+    const weekendCount = historicalWeekends + state.getWeekendCount(staffInfo.id);
+
+    if (weekendCount >= required) {
+      const maxConsecutive = unitConfig?.maxConsecutiveWeekends ?? 2;
+
+      // Compute the Saturday of the proposed shift
+      const newSatObj = new Date(shiftInfo.date);
+      if (newSatObj.getDay() === 0) newSatObj.setDate(newSatObj.getDate() - 1);
+      const newSatStr = newSatObj.toISOString().slice(0, 10);
+
+      // Compute Sunday of proposed weekend
+      const newSunObj = new Date(newSatObj);
+      newSunObj.setDate(newSunObj.getDate() + 1);
+      const newSunStr = newSunObj.toISOString().slice(0, 10);
+
+      // Skip if staff already works this same weekend (Sat or Sun already assigned)
+      const alreadyThisWeekend =
+        state.hasWorkedDate(staffInfo.id, newSatStr) ||
+        state.hasWorkedDate(staffInfo.id, newSunStr);
+
+      if (!alreadyThisWeekend) {
+        // Count consecutive weekends backward
+        let back = 0;
+        for (let i = 1; i <= maxConsecutive; i++) {
+          const prevSat = new Date(newSatObj);
+          prevSat.setDate(prevSat.getDate() - 7 * i);
+          const prevSatStr = prevSat.toISOString().slice(0, 10);
+          const prevSun = new Date(prevSat);
+          prevSun.setDate(prevSun.getDate() + 1);
+          const prevSunStr = prevSun.toISOString().slice(0, 10);
+          if (state.hasWorkedDate(staffInfo.id, prevSatStr) || state.hasWorkedDate(staffInfo.id, prevSunStr)) {
+            back++;
+          } else {
+            break;
+          }
+        }
+
+        // Count consecutive weekends forward
+        let fwd = 0;
+        for (let i = 1; i <= maxConsecutive; i++) {
+          const nextSat = new Date(newSatObj);
+          nextSat.setDate(nextSat.getDate() + 7 * i);
+          const nextSatStr = nextSat.toISOString().slice(0, 10);
+          const nextSun = new Date(nextSat);
+          nextSun.setDate(nextSun.getDate() + 1);
+          const nextSunStr = nextSun.toISOString().slice(0, 10);
+          if (state.hasWorkedDate(staffInfo.id, nextSatStr) || state.hasWorkedDate(staffInfo.id, nextSunStr)) {
+            fwd++;
+          } else {
+            break;
+          }
+        }
+
+        const streak = 1 + back + fwd;
+        if (streak > maxConsecutive) {
+          const excess = streak - maxConsecutive;
+          penalty += weights.consecutiveWeekends * (0.5 + excess * 0.5);
+        }
+      }
     }
   }
 

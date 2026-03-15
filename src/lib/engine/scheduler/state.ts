@@ -50,9 +50,10 @@ export class SchedulerState {
   private workedDatesByStaff = new Map<string, Set<string>>();
 
   addAssignment(draft: AssignmentDraft): void {
-    // Staff list
+    // Staff list — maintain sorted order by date then startTime for predictable retrieval
     const staffList = this.assignmentsByStaff.get(draft.staffId) ?? [];
     staffList.push(draft);
+    staffList.sort((x, y) => x.date < y.date ? -1 : x.date > y.date ? 1 : x.startTime < y.startTime ? -1 : x.startTime > y.startTime ? 1 : 0);
     this.assignmentsByStaff.set(draft.staffId, staffList);
 
     // Shift list
@@ -263,6 +264,11 @@ export class SchedulerState {
       if (hours > peak) peak = hours;
     }
     return peak;
+  }
+
+  /** O(1) check: did this staff member work on this specific date? */
+  hasWorkedDate(staffId: string, date: string): boolean {
+    return this.workedDatesByStaff.get(staffId)?.has(date) ?? false;
   }
 
   /** Total number of weekend-day assignments for `staffId` so far. */

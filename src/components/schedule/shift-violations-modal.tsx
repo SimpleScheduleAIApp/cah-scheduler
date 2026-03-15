@@ -47,10 +47,9 @@ export function ShiftViolationsModal({
   if (!shift) return null;
 
   const hardViolations = violations.filter((v) => v.ruleType === "hard");
-  // Shift-level soft violations (preference match, etc.) — tied to this specific shift
-  const softViolations = violations.filter((v) => v.ruleType === "soft" && v.shiftId);
-  // Staff-level soft violations (overtime, weekend shortfall) — schedule-wide for assigned staff
-  const staffViolations = violations.filter((v) => v.ruleType === "soft" && !v.shiftId);
+  // All soft violations — shift-specific (e.g. preference match) and schedule-wide (e.g. overtime,
+  // consecutive weekends) are shown together; schedule-wide items carry a "Schedule-wide" badge.
+  const softViolations = violations.filter((v) => v.ruleType === "soft");
 
   const dateObj = parseISO(shift.date);
 
@@ -110,13 +109,20 @@ export function ShiftViolationsModal({
               <ul className="space-y-2">
                 {softViolations.map((v, idx) => (
                   <li key={idx} className="rounded bg-white p-2 text-sm shadow-sm">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <span className="font-medium text-yellow-900">{v.ruleName}</span>
-                      {v.penaltyScore !== undefined && (
-                        <Badge variant="secondary" className="text-xs">
-                          -{v.penaltyScore.toFixed(1)} pts
-                        </Badge>
-                      )}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {!v.shiftId && (
+                          <Badge variant="outline" className="text-xs border-yellow-500 text-yellow-700">
+                            Schedule-wide
+                          </Badge>
+                        )}
+                        {v.penaltyScore !== undefined && (
+                          <Badge variant="secondary" className="text-xs">
+                            -{v.penaltyScore.toFixed(1)} pts
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                     <div className="text-yellow-700">{v.description}</div>
                   </li>
@@ -125,41 +131,8 @@ export function ShiftViolationsModal({
             </div>
           )}
 
-          {/* Staff Schedule Violations (overtime, weekend shortfall, etc.) */}
-          {staffViolations.length > 0 && (
-            <div className="rounded-lg border border-orange-200 bg-orange-50 p-3">
-              <div className="mb-2 flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-orange-600" />
-                <span className="font-medium text-orange-800">
-                  Staff Schedule Issues ({staffViolations.length})
-                </span>
-                <Badge variant="outline" className="ml-auto border-orange-600 text-orange-700">
-                  Schedule-wide
-                </Badge>
-              </div>
-              <p className="mb-2 text-xs text-orange-700">
-                These apply to assigned staff across the full schedule, not just this shift.
-              </p>
-              <ul className="space-y-2">
-                {staffViolations.map((v, idx) => (
-                  <li key={idx} className="rounded bg-white p-2 text-sm shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-orange-900">{v.ruleName}</span>
-                      {v.penaltyScore !== undefined && (
-                        <Badge variant="secondary" className="text-xs">
-                          -{v.penaltyScore.toFixed(1)} pts
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="text-orange-700">{v.description}</div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
           {/* No violations */}
-          {hardViolations.length === 0 && softViolations.length === 0 && staffViolations.length === 0 && (
+          {hardViolations.length === 0 && softViolations.length === 0 && (
             <div className="rounded-lg border border-green-200 bg-green-50 p-4 text-center">
               <span className="text-green-800">No issues found for this shift.</span>
             </div>

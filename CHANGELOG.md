@@ -6,6 +6,95 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.6.11] - 2026-03-15
+
+### Fixed
+
+- **Violation modal: "Staff Schedule Issues" merged into "Soft Rule Violations"** (`src/components/schedule/shift-violations-modal.tsx`): The shift violations modal previously had three sections — Hard Rule Violations (red), Soft Rule Violations (yellow), and a separate Staff Schedule Issues (orange) for schedule-wide soft violations such as overtime and consecutive weekends. From the manager's perspective, all penalties belong in one place. The two soft-violation sections are now merged: all soft violations — whether shift-specific (preference mismatch) or schedule-wide (consecutive weekends, overtime) — appear in the single "Soft Rule Violations" section. Schedule-wide items carry an inline "Schedule-wide" badge so managers can still distinguish them from shift-specific penalties. The `WEEKEND_ONLY_RULE_IDS` filter (which prevents consecutive-weekend violations from appearing on weekday shifts) is unchanged.
+
+### Files Modified
+
+- `src/components/schedule/shift-violations-modal.tsx` — `staffViolations` filter removed; `softViolations` now includes all `ruleType === "soft"` violations; "Schedule-wide" badge rendered inline for items with no `shiftId`
+
+---
+
+## [1.6.10] - 2026-03-15
+
+### Fixed
+
+- **Performance regression on 28-day schedules restored** (`src/lib/engine/scheduler/scoring.ts`, `src/lib/engine/scheduler/state.ts`): The v1.6.9 consecutive-weekend penalty introduced an O(n) loop inside `softPenalty()` — it called `state.getStaffAssignments()` on every invocation and iterated every assignment for that staff member to build a set of weekend IDs. For a 28-day schedule this created ~2.25 million `Date` allocations across the ~125,000 `softPenalty()` calls made during local search and the redistribution sweeps, causing extreme GC pressure and a 14.7× regression (93s → 1,374s). The loop has been replaced with an O(maxConsecutive) bounded backward/forward scan using a new `hasWorkedDate()` method on `SchedulerState`, which performs an O(1) Set lookup against the already-maintained `workedDatesByStaff` index. For the default `maxConsecutiveWeekends = 2`, each call now performs at most 8 Date allocations and 8 Set lookups regardless of schedule length, restoring linear scaling.
+
+- **Consecutive-weekend penalty no longer conflicts with weekend-equity bonus** (`src/lib/engine/scheduler/scoring.ts`): The v1.6.9 section 3b penalty fired unconditionally for all staff below AND above their weekend quota. For staff below quota, section 3 awards a bonus of `−weights.weekendCount × 0.5` to incentivise filling required weekends, but section 3b immediately applied a penalty of `weights.consecutiveWeekends × 0.5` (same magnitude when both weights equal 1.0), effectively cancelling the bonus and causing the FAIR profile's fairness score to get worse after the fix (28-day: 0.25 → 0.35). Section 3b now only fires when the staff member is AT or ABOVE their required weekend count — the same condition under which section 3 switches from bonus to penalty. Staff below quota are never penalised for consecutive weekends during greedy construction; the scheduler is free to fill their required weekends even on back-to-back Saturdays/Sundays.
+
+### Files Modified
+
+- `src/lib/engine/scheduler/state.ts` — `hasWorkedDate(staffId, date): boolean` public method added (O(1) Set lookup via existing `workedDatesByStaff` index)
+- `src/lib/engine/scheduler/scoring.ts` — section 3b rewritten: O(n) assignment loop replaced with O(maxConsecutive) bounded scan; quota gate added so penalty only fires when `weekendCount >= required`
+
+---
+
+## [1.6.9] - 2026-03-15
+
+### Fixed
+
+- **Consecutive weekends penalty now active in the scheduler** (`src/lib/engine/scheduler/scoring.ts`): The `consecutiveWeekends` weight was defined in all three weight profiles (Balanced 1.0, Fairness-Optimized 3.0, Cost-Optimized 1.0) but `softPenalty()` never read it — the scheduler assigned consecutive weekends freely and the FAIR profile's high weight of 3.0 had no effect. `softPenalty()` now includes a consecutive-weekend component: on every weekend shift, it collects the staff member's existing weekend assignments, checks whether adding this shift would extend a consecutive streak past the unit maximum (default 2), and applies a penalty of `weights.consecutiveWeekends × (0.5 + excess × 0.5)` if so. Saturday and Sunday of the same weekend share one ID (Sunday anchors back to Saturday) so working both days never double-penalises. This mirrors the post-hoc `consecutiveWeekendRule` evaluator so the scheduler now avoids building these violations during greedy construction and local search rather than merely detecting them after generation.
+
+- **Weekend-specific violations scoped to weekend shifts** (`src/app/schedule/[id]/page.tsx`): `consecutive-weekends` and `weekend-fairness` violations are now only attached to Sat/Sun shifts in the violations map. Previously, all staff-level violations (those with an empty `shiftId`) were propagated to every shift the staff member was assigned to — including weekday shifts — so clicking on a Monday Day Shift would show a "Consecutive Weekends Penalty" with nothing actionable the manager could do from that shift. These violations are only relevant on the weekend shifts where the pattern actually occurs.
+
+### Files Modified
+
+- `src/lib/engine/scheduler/scoring.ts` — consecutive-weekend penalty component added to `softPenalty()`
+- `src/app/schedule/[id]/page.tsx` — `WEEKEND_ONLY_RULE_IDS` filter applied to staff-level violation propagation
+- `RULES_SPECIFICATION.md` — §12.4 penalty table updated; document version 1.6.0
+
+---
+
+## [1.6.8] - 2026-03-15
+
+### Fixed
+
+- **OT-aware charge nurse selection** (`src/lib/engine/scheduler/greedy.ts`): The greedy scheduler now applies a non-OT filter before the Level 5 charge preference. Within the charge-qualified pool, candidates who would stay ≤ 40h are evaluated first; Level 5 is preferred within that non-OT pool. A Level 4 nurse with non-OT capacity is now selected over a Level 5 nurse who would enter overtime. Previously the algorithm exclusively preferred Level 5 nurses for all charge slots regardless of their weekly hours, causing any Level 5 nurse who specialised in a single shift type to be assigned charge duty every eligible shift until the 60h hard ceiling stopped them — resulting in 5 charge shifts/week (60h) for that nurse every single week while Level 4 stand-ins were unused. This concentrated overtime on one or two nurses per shift type and made all three schedule variants produce identical results (no swap could improve total OT because those nurses were already at the weekly maximum).
+
+- **Schedule generation time: 15 minutes → under 2 minutes** (`src/lib/engine/scheduler/local-search.ts`, `src/lib/engine/scheduler/scoring.ts`): Three performance fixes applied to the local search and post-processing sweeps:
+  1. *Delta swap evaluation* — instead of recomputing softPenalty for all ~280 assignments per swap attempt, only the ~15–30 assignments whose penalty actually changes are rescored (coworkers on both affected shifts + both staff members' same-week assignments for OT delta). This reduces per-swap work from O(all assignments) to O(shift size), cutting softPenalty calls from ~420,000 to ~20,000 across a full local-search run.
+  2. *In-place state mutation* — `isSwapValid` now temporarily removes and restores assignments directly instead of cloning the full state object. This eliminates 1,500+ Map clones per schedule run (each clone copied ~800 entries).
+  3. *Fast day-name lookup* — replaced `new Date().toLocaleDateString("en-US", { weekday: "long" })` (a slow V8 locale API) with a pre-built array lookup in `softPenalty`.
+
+### Files Modified
+
+- `src/lib/engine/scheduler/greedy.ts` — non-OT filter applied to charge candidate pool before Level 5 preference
+- `src/lib/engine/scheduler/local-search.ts` — delta penalty helpers (`buildAffectedSet`, `scoreSubset`, `computeSwapDeltaPenalty`); `isSwapValid` refactored to in-place mutation with try/finally restoration; all three phase functions updated to use delta evaluation
+- `src/lib/engine/scheduler/scoring.ts` — `DAY_NAMES` constant replaces `toLocaleDateString` call
+- `src/lib/engine/scheduler/state.ts` — `addAssignment` now maintains the staff list in sorted order (date then startTime)
+- `src/__tests__/scheduler/local-search.test.ts`, `src/__tests__/integration/scheduler-pipeline.test.ts`, `src/__tests__/integration/scheduler-output.test.ts`, `src/app/api/shifts/[id]/eligible-staff/route.ts` — added `shiftMap` to `SchedulerContext` construction (required field added when `shiftMap` was introduced in v1.6.7)
+- `RULES_SPECIFICATION.md` — §12.2 charge selection updated; document version 1.5.9
+
+---
+
+## [1.6.7] - 2026-03-15
+
+### Fixed
+
+- **Fairness-Optimized and Cost-Optimized variants derived from Balanced base** (`src/lib/engine/scheduler/runner.ts`): Both alternative variants are now built from the Balanced result using deterministic post-processing sweeps instead of independent greedy + local-search runs. This guarantees that Fairness-Optimized never has worse weekend equity than Balanced, and Cost-Optimized never has more overtime than Balanced — properties that could not be reliably guaranteed when using independent random seeds. The root cause of the Fairness failure was that the high `preference` weight (2.0) in the FAIR profile respected `avoidWeekends` flags so strongly that it concentrated weekend assignments on fewer staff, paradoxically producing a worse weekend-equity score than Balanced. Building from the same Balanced base avoids this structural conflict.
+
+- **Composite cost score formula** (`src/lib/engine/scheduler/runner.ts`): The scenario cost score now measures composite labor cost: `(agencyCount × 4 + otCount × 1 + floatCount × 0.2) / (total × 4)`. Previously it counted only overtime assignments, making agency and float optimisations invisible in the displayed score. The new formula reflects real hospital cost premiums: agency nurses carry a 2–3× markup over base pay (weight 4.0), overtime costs 1.5× base pay (weight 1.0), and float differentials are typically ~10% above base (weight 0.2). This matches what Cost-Optimized actually optimises for.
+
+- **`computeTotalPenalty` O(n²) → O(n)** (`src/lib/engine/scheduler/local-search.ts`): The function previously called `assignments.filter()` inside a loop over assignments, scanning all n assignments n times. A `shiftId → coworkers` map is now precomputed once per call, reducing per-assignment lookup to O(shift_size) ≈ O(3). For a typical 84-assignment schedule this cuts from ~7,000 comparisons per call to ~252. Since `computeTotalPenalty` is called thousands of times during local search and the two deterministic sweeps, this significantly reduces generation time.
+
+### Added
+
+- **Verification script** (`scripts/verify-scores.ts`): Standalone script that generates all three schedule variants and asserts the score ordering guarantees: `cost(Cost) ≤ cost(Balanced)`, `fairness(Fair) ≤ fairness(Balanced)`, and `OT(Cost) ≤ OT(Balanced)`. Run with `npx tsx scripts/verify-scores.ts` after `npm run db:seed`.
+
+### Files Modified
+
+- `src/lib/engine/scheduler/runner.ts` — composite cost formula; Fair and Cost variants built from Balanced base + sweeps; removed independent FAIR generation and fairSeed
+- `src/lib/engine/scheduler/local-search.ts` — precomputed shiftCoworkers map in `computeTotalPenalty`
+- `scripts/verify-scores.ts` — new verification script
+- `RULES_SPECIFICATION.md` — §12.1, §12.2 Phase 3, §12.6 updated; document version 1.5.8
+- `docs/11-generating-schedules.md` — updated variant descriptions and FAQ answer
+
+---
+
 ## [1.6.6] - 2026-03-10
 
 ### Fixed

@@ -1,7 +1,7 @@
 # CAH Scheduler - Complete Rules Specification
 
-**Document Version:** 1.5.7
-**Last Updated:** March 4, 2026 (v1.5.7)
+**Document Version:** 1.6.11
+**Last Updated:** March 15, 2026 (v1.6.11)
 **Purpose:** This document describes all scheduling rules and logic implemented in the CAH Scheduler application. Please review and mark any rules that need modification.
 
 ---
@@ -547,6 +547,11 @@ Please review each section and note any changes needed:
 | 1.5.4 | Mar 4, 2026 | **Excel import preserves census tiers (§6):** Census band import gains a `color` field; parser reads "Color"/"Tier" column and falls back to sort-order derivation when column is absent. Export includes "Color" column and a Census Bands sheet in the template. **New schedules default to Green (§3.1):** When a new schedule is created, every shift is seeded with `acuityLevel="green"` and the corresponding `censusBandId`, so census-band-aware staffing applies from day one without requiring a Census page visit. |
 | 1.5.5 | Mar 4, 2026 | **Scheduler targets census-band-required count (§12.2, §12.6):** Critical bug fixed — the greedy scheduler and repair phase both use `shift.requiredStaffCount + shift.acuityExtraStaff` from the build context. When a census tier was selected (`censusBandId` set), `acuityExtraStaff` was correctly 0 but `requiredStaffCount` still held the shift definition's base value (e.g. 4 for Day, 3 for Night) rather than the band total (e.g. 5 for Green = 4 RNs + 1 CNA). `buildContext()` now adds a post-load pass that overrides `requiredStaffCount` with `band.requiredRNs + band.requiredCNAs` for every shift with `censusBandId` set, and zeros `acuityExtraStaff`. Scheduler now correctly fills 5 staff per shift when Green tier is active. |
 | 1.5.6 | Mar 4, 2026 | **Output validation utility (§12.6):** `checkForUnexplainedUnderstaffing()` added — a pure function that scans the scheduler's understaffed output and flags any shift where (a) no hard-rule rejection reasons were documented AND (b) enough potentially available staff existed. A non-empty result is a signal of a scheduler logic bug. Called after each Balanced generation; result logged to audit trail. **Tests block build:** `npm run test` added to the build script so all 399 tests must pass before a deployment can proceed. **Seed FK order fixed:** `open_shift`, `generation_job`, and `staff_holiday_assignment` now deleted before their parent tables, fixing a FK constraint error on re-seed when Open Shifts had been used through the UI. |
+| 1.6.11 | Mar 15, 2026 | **Violation modal restructured (UI only, no rule change):** The shift violations modal no longer shows a separate "Staff Schedule Issues" orange section. Schedule-wide soft violations (consecutive weekends, overtime) now appear in the single "Soft Rule Violations" section with a "Schedule-wide" badge so managers can distinguish them from shift-specific violations. Rule behaviour and penalty scoring are unchanged. |
+| 1.6.10 | Mar 15, 2026 | **Consecutive weekends penalty — quota gate added (§12.4):** The v1.6.0 penalty previously fired for all staff, including those below their required weekend count. This cancelled the weekend equity bonus (−`weekendCount_weight × 0.5`) applied in the same function for under-quota staff, making fairness worse rather than better after the fix was introduced (28-day fairness score: 0.25 → 0.35). The penalty now only fires when `weekendCount ≥ required` — the same threshold that switches section 3 from bonus to excess penalty. Staff below quota are never penalised for consecutive weekends during generation. **Performance fix (§12.2):** The v1.6.0 implementation iterated all staff assignments on every `softPenalty()` call (O(n) per call × 75,000 calls = 2.25M Date allocations for a 28-day schedule), causing a 14.7× regression (93s → 1,374s). Replaced with an O(maxConsecutive) bounded backward/forward scan using a new `hasWorkedDate()` O(1) Set lookup on `SchedulerState`. Performance restored to linear scaling. |
+| 1.6.0 | Mar 15, 2026 | **Consecutive weekends penalty now active in scheduler (§12.4):** `softPenalty()` now includes a consecutive-weekend component using `weights.consecutiveWeekends`. Previously this weight was defined in all three profiles but never read, meaning the scheduler assigned consecutive weekends freely and the FAIR profile's `consecutiveWeekends: 3.0` did nothing. The scheduler now penalises assigning a weekend shift that would push a staff member's consecutive-weekend streak past the unit maximum (default 2). Penalty: `weight × (0.5 + excess × 0.5)`. **Weekend-specific violations scoped to weekend shifts (§4.3):** `consecutive-weekends` and `weekend-fairness` violations are now only displayed on Sat/Sun shifts. Previously these staff-level violations were propagated to every shift the staff member was assigned to (including weekday shifts), making them appear on Monday Day Shifts where a manager had no actionable way to address a consecutive-weekends issue. |
+| 1.5.9 | Mar 15, 2026 | **OT-aware charge nurse selection (§12.2):** The greedy now applies a non-OT filter before the Level 5 charge preference. Within the charge-qualified pool, non-OT candidates (weekly hours + this shift ≤ 40h) are evaluated first; Level 5 is preferred within that non-OT pool. A Level 4 nurse with non-OT capacity is selected over a Level 5 nurse who would go into overtime. Previously the algorithm exclusively selected Level 5 nurses for all charge slots regardless of their OT status, causing Level 5 nurses (particularly those specialising in a single shift type) to be assigned to every charge slot until the 60h hard limit blocked them — concentrating 5 shifts/week of charge duty on one or two nurses each week. Level 4 stand-ins were only used when no Level 5 was eligible at all. **Performance: delta swap evaluation (§12.2):** Local search and both post-processing sweeps now use delta penalty evaluation instead of recomputing total penalty across all assignments. Only the ~15–30 assignments whose penalty actually changes (coworkers on both affected shifts + both staff members' same-week assignments for OT delta) are rescored per swap attempt, replacing ~280 softPenalty calls with ~15–30. In-place state mutation with unconditional restoration replaces state.clone() in swap validity checking, eliminating all Map copies during local search. These changes reduce 28-day schedule generation from ~15 minutes to under 2 minutes. |
+| 1.5.8 | Mar 15, 2026 | **Variant generation refactored — derived from Balanced base (§12.1, §12.2):** Fairness-Optimized and Cost-Optimized variants are now built from the Balanced result by applying deterministic post-processing sweeps instead of independent greedy+local-search runs. This guarantees: (a) fairness(Fair) ≤ fairness(Balanced) and (b) OT(Cost) ≤ OT(Balanced), which previously could not be reliably guaranteed due to seed sensitivity and preference-fairness conflicts in independent runs. Phase 3 section added to §12.2 documenting the OT-reduction and weekend-redistribution sweeps. **Composite cost score (§12.6):** Scenario cost score now measures composite labor cost — `(agency×4 + OT×1 + float×0.2) / (total×4)` — weighted by real hospital cost premiums (agency 2–3× base pay, OT 1.5× base pay, float differential ~10%). Previously the cost score counted only overtime assignments, making agency and float optimizations invisible in the score. **`computeTotalPenalty` O(n²) → O(n) (§12.2):** Precomputes a `shiftId → coworkers` map once per call instead of re-filtering the full assignment list per assignment. For 84 assignments this reduces from ~7,000 comparisons per call to ~252. |
 | 1.5.7 | Mar 4, 2026 | **On-leave staff displayed with Leave badge in schedule grid (§11):** When leave is approved and an assignment is cancelled (`status = "cancelled"`), the schedule grid now renders that staff member with a strikethrough name, orange dot, and orange "Leave" badge — and excludes them from the shift's staffing count. Previously, cancelled assignments were counted in the X/Y total (showing 5/5 as "full" even though one person was on leave) and rendered identically to active assignments. This masked understaffing created by leave approvals. The hard-violation badge from the rule engine still fires; the count now correctly drops to (N-1)/N so the orange understaffing border appears immediately. |
 
 ---
@@ -562,10 +567,10 @@ The CAH Scheduler includes an **automated scheduling engine** that generates a f
 | Variant | Description | Disposition |
 |---------|-------------|-------------|
 | **Balanced** | Equal weight across all objectives | Written directly to the schedule's assignment table as the active draft |
-| **Fairness-Optimized** | Prioritises weekend equity, holiday fairness, and preference matching | Saved as an alternative scenario |
-| **Cost-Optimized** | Minimises overtime and float/agency use | Saved as an alternative scenario |
+| **Fairness-Optimized** | Guarantees equal or better weekend equity than Balanced via a deterministic weekend-redistribution sweep | Saved as an alternative scenario |
+| **Cost-Optimized** | Minimises overtime and float/agency use via deterministic OT-reduction and weekend-redistribution sweeps | Saved as an alternative scenario |
 
-Each variant is generated **fully independently** using the same two-phase algorithm with different penalty weight profiles. Managers compare variants on the Scenarios page and click **Apply** to switch the active schedule.
+The **Balanced** variant is generated first (greedy construction + local search). The **Fairness-Optimized** and **Cost-Optimized** variants are then derived from the Balanced result by applying deterministic post-processing sweeps — they never produce a result worse than Balanced on their primary metric. Managers compare variants on the Scenarios page and click **Apply** to switch the active schedule.
 
 > **Note:** Generating a new schedule wipes all existing assignments for that schedule and starts fresh.
 
@@ -587,7 +592,7 @@ Shifts are sorted by **constraint difficulty** (most constrained first, to maxim
 Within each group, earlier dates come first, then earlier start times.
 
 For each shift:
-1. If a **charge nurse slot** is required and not yet filled, a charge-qualified candidate is selected first.
+1. If a **charge nurse slot** is required and not yet filled, a charge-qualified candidate is selected first. Within the charge candidate pool, **non-OT candidates** (weekly hours + this shift ≤ 40h) are used first; OT candidates are only considered when every charge-qualified eligible nurse would go into overtime. Within whichever pool is used, **Level 5** nurses are preferred over Level 4 stand-ins. This means a Level 4 nurse with remaining non-OT hours will be selected as charge before a Level 5 nurse who would go into overtime.
 2. Remaining **staff slots** are filled one at a time.
 3. For each slot: filter all active staff through the **hard rule eligibility checks** (see §12.3) and the **charge protection guard** (see below). The eligible pool is then split into **non-OT candidates** (weekly hours + this shift ≤ 40h) and **OT candidates** (would cross 40h). Non-OT candidates are used exclusively when any exist; OT candidates are only considered when every eligible nurse would cause overtime. Within whichever pool is used, candidates are ranked by the **soft penalty function** (see §12.4) and the lowest-penalty candidate is assigned.
 4. If no eligible candidate exists for a slot, the slot is left empty. The shift is recorded as **understaffed** with the most common hard rule rejection reasons.
@@ -624,7 +629,7 @@ Up to 1,500 random swap attempts are made between pairs of assignments on differ
 - The swap passes all collective and individual hard rule checks (see below)
 - The total soft penalty of the schedule decreases
 
-This monotonic hill-climbing approach escapes greedy local optima without ever violating hard rules.
+This uses the **Late Acceptance** metaheuristic (Burke & Bykov, 2012): a swap is accepted if the new penalty ≤ the penalty recorded 200 iterations ago, not strictly better than the current solution. This allows temporary worsening to escape local optima while still converging toward a good solution.
 
 **Collective checks applied before individual eligibility** (added in v1.4.10):
 
@@ -632,6 +637,18 @@ This monotonic hill-climbing approach escapes greedy local optima without ever v
 |-------|------|
 | **Charge-slot integrity** | If an assignment has `isChargeNurse = true`, the incoming staff must be charge-qualified (Level 4+ and `isChargeNurseQualified = true`). The `isChargeNurse` flag is a slot property spread via object spread — without this check, a Level 3 nurse can silently inherit the flag. |
 | **Level 2 supervision residual** | After removing the outgoing staff from an ICU/ER shift, if Level 2 nurses remain on that shift, the shift must still have at least one Level 4+ supervisor (either from remaining staff or from the incoming staff member). |
+
+#### Phase 3: Deterministic Post-Processing Sweeps
+
+After local search completes, two deterministic sweeps are applied to the **Fairness-Optimized** and **Cost-Optimized** variants. Because these variants start from the Balanced result, they are guaranteed to never score *worse* than Balanced on their primary metric.
+
+**Overtime Reduction Sweep** *(Cost-Optimized only)*
+Exhaustively iterates all overtime assignments (those that push a nurse above 40h/week) and tries swapping each with every other assignment. Accepts the swap only if total weighted penalty decreases under COST_OPTIMIZED weights (OT weight 3.0). Runs until no improving swap remains.
+
+**Weekend Redistribution Sweep** *(Fairness-Optimized and Cost-Optimized)*
+Computes mean weekend-assignment count across all staff. Identifies staff above and below the mean. Exhaustively pairs "excess" weekend assignments with "deficit" staff and attempts a swap for each pair. Accepts the swap only if it passes all hard rules and total weighted penalty decreases under the variant's weights (FAIR weekendCount weight 3.0; COST_OPTIMIZED weekendCount weight 1.0). Runs until no improving swap remains.
+
+The result: Fairness-Optimized is guaranteed to have weekend-count std dev ≤ Balanced (monotonically improving from the same starting point). Cost-Optimized is guaranteed to have OT count ≤ Balanced.
 
 ---
 
@@ -669,6 +686,8 @@ Each component is multiplied by the weight for that component in the active vari
 | **Preferred day off** | + `weight × 0.7` | Shift falls on a day the staff prefers off |
 | **Weekend avoidance** | + `weight × 0.6` | Shift is on Sat/Sun and staff has `avoidWeekends = true` |
 | **Weekend incentive** | − `weight × 0.5` | Shift is a weekend shift and staff is below their required weekend count (historical + current) |
+| **Weekend excess penalty** | + `weight × (0.4 + excess × 0.3)` | Shift is a weekend and staff is at or above required weekend count |
+| **Consecutive weekends** | + `weight × (0.5 + excess × 0.5)` | Assigning this weekend shift would push the staff member's consecutive-weekend streak past the unit maximum (default 2). `excess` = streak length minus max. **Only fires when the staff member is AT or ABOVE their required weekend count** (default 3 per 6-week period). Staff below quota receive the weekend equity bonus from the row above instead; applying a consecutive-weekend penalty to under-quota staff would cancel that bonus and reduce fairness. Sat + Sun of the same weekend share one ID and are not double-counted. |
 | **Float — uncross-trained** | + `weight × 1.0` | Assigned outside home unit, not cross-trained there |
 | **Float — cross-trained** | + `weight × 0.3` | Assigned outside home unit, but cross-trained |
 | **Skill mix — all same** | + `weight × 0.6` | All staff on shift (including candidate) would share the same competency level |

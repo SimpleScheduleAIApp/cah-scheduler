@@ -45,15 +45,22 @@ function computeTotalPenalty(
   context: SchedulerContext,
   weights: WeightProfile
 ): number {
+  // Precompute shift → all assignments map once (O(n)) to avoid O(n²) filter in the loop below
+  const shiftCoworkers = new Map<string, AssignmentDraft[]>();
+  for (const a of assignments) {
+    const list = shiftCoworkers.get(a.shiftId);
+    if (list) list.push(a);
+    else shiftCoworkers.set(a.shiftId, [a]);
+  }
+
   let total = 0;
   for (const a of assignments) {
     const staffInfo = context.staffMap.get(a.staffId);
     const shiftInfo = context.shiftMap.get(a.shiftId);
     if (!staffInfo || !shiftInfo) continue;
 
-    const currentShiftAssignments = assignments.filter(
-      (x) => x.shiftId === a.shiftId && x.staffId !== a.staffId
-    );
+    const currentShiftAssignments = (shiftCoworkers.get(a.shiftId) ?? [])
+      .filter((x) => x.staffId !== a.staffId);
 
     total += softPenalty(
       staffInfo,
@@ -70,10 +77,132 @@ function computeTotalPenalty(
   return total;
 }
 
+// ---------------------------------------------------------------------------
+// Delta penalty helpers
+//
+// Instead of calling computeTotalPenalty(allAssignments, ...) on every swap
+// candidate — which is O(A) per evaluation — these three helpers identify the
+// ~15-30 assignments whose softPenalty actually changes, score only those, and
+// return the net delta.  The key insight is that a staff swap only affects:
+//
+//   1. Coworkers on the two touched shifts (skill mix, charge clustering).
+//   2. Each swapped staff member's other assignments in the affected calendar
+//      weeks (OT / capacity-spreading component).
+//
+// All remaining assignments are unchanged and need not be rescored.
+// ---------------------------------------------------------------------------
+
+/**
+ * Collect the minimal set of assignments whose softPenalty changes when `a`
+ * (staffA on shiftA) and `b` (staffB on shiftB) are swapped.  Uses O(1)
+ * SchedulerState lookups — no full-array scan.
+ */
+function buildAffectedSet(
+  a: AssignmentDraft,
+  b: AssignmentDraft,
+  state: SchedulerState
+): AssignmentDraft[] {
+  const seen = new Set<string>();
+  const result: AssignmentDraft[] = [];
+
+  const add = (x: AssignmentDraft) => {
+    const k = `${x.staffId}:${x.shiftId}`;
+    if (!seen.has(k)) { seen.add(k); result.push(x); }
+  };
+
+  // 1. Everyone on shiftA and shiftB (coworker effects)
+  for (const x of state.getShiftAssignments(a.shiftId)) add(x);
+  for (const x of state.getShiftAssignments(b.shiftId)) add(x);
+
+  // 2. StaffA's other assignments in the two affected calendar weeks (OT delta)
+  const weekA = getWeekStart(a.date);
+  const weekB = getWeekStart(b.date);
+  for (const x of state.getStaffAssignments(a.staffId)) {
+    const w = getWeekStart(x.date);
+    if (w === weekA || w === weekB) add(x);
+  }
+
+  // 3. StaffB's other assignments in the same weeks
+  for (const x of state.getStaffAssignments(b.staffId)) {
+    const w = getWeekStart(x.date);
+    if (w === weekA || w === weekB) add(x);
+  }
+
+  return result;
+}
+
+/**
+ * Sum softPenalty for a subset of assignments.
+ * Coworker lists are fetched from `state` so skill-mix reflects the current
+ * (possibly already-mutated) full shift composition.
+ */
+function scoreSubset(
+  subset: AssignmentDraft[],
+  state: SchedulerState,
+  context: SchedulerContext,
+  weights: WeightProfile
+): number {
+  let total = 0;
+  for (const x of subset) {
+    const staffInfo = context.staffMap.get(x.staffId);
+    const shiftInfo = context.shiftMap.get(x.shiftId);
+    if (!staffInfo || !shiftInfo) continue;
+    const coworkers = state.getShiftAssignments(x.shiftId).filter((c) => c.staffId !== x.staffId);
+    total += softPenalty(
+      staffInfo, shiftInfo, state, weights, coworkers,
+      context.staffMap, x.isChargeNurse, context.unitConfig,
+      context.historicalWeekendCounts ?? new Map()
+    );
+  }
+  return total;
+}
+
+/**
+ * Compute the net penalty delta of swapping `a` ↔ `b` without committing the
+ * swap.  Temporarily mutates `state` (remove a & b, add newA & newB), scores
+ * the affected set, then restores — safe because JS is single-threaded.
+ *
+ * Returns (newPenalty − oldPenalty).  Negative = improvement.
+ */
+function computeSwapDeltaPenalty(
+  a: AssignmentDraft,
+  b: AssignmentDraft,
+  newA: AssignmentDraft,
+  newB: AssignmentDraft,
+  state: SchedulerState,
+  context: SchedulerContext,
+  weights: WeightProfile
+): number {
+  const affected = buildAffectedSet(a, b, state);
+  const oldScore = scoreSubset(affected, state, context, weights);
+
+  // Apply the swap in-place
+  state.removeAssignment(a);
+  state.removeAssignment(b);
+  state.addAssignment(newA);
+  state.addAssignment(newB);
+
+  // Remap a → newA and b → newB within the affected list
+  const newAffected = affected.map((x) => {
+    if (x.staffId === a.staffId && x.shiftId === a.shiftId) return newA;
+    if (x.staffId === b.staffId && x.shiftId === b.shiftId) return newB;
+    return x;
+  });
+  const newScore = scoreSubset(newAffected, state, context, weights);
+
+  // Restore
+  state.removeAssignment(newA);
+  state.removeAssignment(newB);
+  state.addAssignment(a);
+  state.addAssignment(b);
+
+  return newScore - oldScore;
+}
+
 /**
  * Quick hard-rule check for a proposed swap.
- * Accepts the current SchedulerState, clones it, removes the two assignments,
- * then checks hard rules — eliminating the O(A) full-array rebuild.
+ * Temporarily removes the two assignments from `currentState` in-place,
+ * checks hard rules, then restores — no clone required.
  */
 function isSwapValid(
   currentState: SchedulerState,
@@ -92,46 +221,12 @@ function isSwapValid(
 
   if (!staffA || !staffB || !shiftA || !shiftB) return false;
 
-  // Clone current state and remove the two assignments being swapped
-  const tempState = currentState.clone();
-  tempState.removeAssignment(a);
-  tempState.removeAssignment(b);
+  // Temporarily remove both assignments for hard-rule evaluation.
+  // JS is single-threaded — safe to mutate and restore unconditionally via finally.
+  currentState.removeAssignment(a);
+  currentState.removeAssignment(b);
 
-  // ── Collective constraint checks ────────────────────────────────────────────
-
-  // Guard 1: Charge-slot integrity.
-  if (a.isChargeNurse && (!staffB.isChargeNurseQualified || staffB.icuCompetencyLevel < 4)) return false;
-  if (b.isChargeNurse && (!staffA.isChargeNurseQualified || staffA.icuCompetencyLevel < 4)) return false;
-
-  // Guard 2: Level 2 supervision.
-  if (isICUUnit(shiftA.unit)) {
-    const remainingOnA = tempState.getShiftAssignments(shiftA.id);
-    const hasLevel2OnA = remainingOnA.some(
-      (r) => (context.staffMap.get(r.staffId)?.icuCompetencyLevel ?? 0) === 2
-    );
-    if (hasLevel2OnA) {
-      const stillHasLevel4OnA = remainingOnA.some(
-        (r) => (context.staffMap.get(r.staffId)?.icuCompetencyLevel ?? 0) >= 4
-      );
-      if (!stillHasLevel4OnA && staffB.icuCompetencyLevel < 4) return false;
-    }
-  }
-  if (isICUUnit(shiftB.unit)) {
-    const remainingOnB = tempState.getShiftAssignments(shiftB.id);
-    const hasLevel2OnB = remainingOnB.some(
-      (r) => (context.staffMap.get(r.staffId)?.icuCompetencyLevel ?? 0) === 2
-    );
-    if (hasLevel2OnB) {
-      const stillHasLevel4OnB = remainingOnB.some(
-        (r) => (context.staffMap.get(r.staffId)?.icuCompetencyLevel ?? 0) >= 4
-      );
-      if (!stillHasLevel4OnB && staffA.icuCompetencyLevel < 4) return false;
-    }
-  }
-
-  // ── Individual eligibility checks ────────────────────────────────────────────
-
-  if (!passesHardRules(staffA, shiftB, tempState, context)) return false;
+  // Build draftA outside try so it's available for restoration in finally.
   const draftA: AssignmentDraft = {
     ...a,
     shiftId: shiftB.id,
@@ -144,10 +239,55 @@ function isSwapValid(
     isFloat: !!(staffA.homeUnit && staffA.homeUnit !== shiftB.unit),
     floatFromUnit: staffA.homeUnit && staffA.homeUnit !== shiftB.unit ? (staffA.homeUnit ?? null) : null,
   };
-  tempState.addAssignment(draftA);
-  if (!passesHardRules(staffB, shiftA, tempState, context)) return false;
+  let draftAAdded = false;
 
-  return true;
+  try {
+    // ── Collective constraint checks ──────────────────────────────────────────
+
+    // Guard 1: Charge-slot integrity.
+    if (a.isChargeNurse && (!staffB.isChargeNurseQualified || staffB.icuCompetencyLevel < 4)) return false;
+    if (b.isChargeNurse && (!staffA.isChargeNurseQualified || staffA.icuCompetencyLevel < 4)) return false;
+
+    // Guard 2: Level 2 supervision.
+    if (isICUUnit(shiftA.unit)) {
+      const remainingOnA = currentState.getShiftAssignments(shiftA.id);
+      const hasLevel2OnA = remainingOnA.some(
+        (r) => (context.staffMap.get(r.staffId)?.icuCompetencyLevel ?? 0) === 2
+      );
+      if (hasLevel2OnA) {
+        const stillHasLevel4OnA = remainingOnA.some(
+          (r) => (context.staffMap.get(r.staffId)?.icuCompetencyLevel ?? 0) >= 4
+        );
+        if (!stillHasLevel4OnA && staffB.icuCompetencyLevel < 4) return false;
+      }
+    }
+    if (isICUUnit(shiftB.unit)) {
+      const remainingOnB = currentState.getShiftAssignments(shiftB.id);
+      const hasLevel2OnB = remainingOnB.some(
+        (r) => (context.staffMap.get(r.staffId)?.icuCompetencyLevel ?? 0) === 2
+      );
+      if (hasLevel2OnB) {
+        const stillHasLevel4OnB = remainingOnB.some(
+          (r) => (context.staffMap.get(r.staffId)?.icuCompetencyLevel ?? 0) >= 4
+        );
+        if (!stillHasLevel4OnB && staffA.icuCompetencyLevel < 4) return false;
+      }
+    }
+
+    // ── Individual eligibility checks ─────────────────────────────────────────
+
+    if (!passesHardRules(staffA, shiftB, currentState, context)) return false;
+    currentState.addAssignment(draftA);
+    draftAAdded = true;
+    if (!passesHardRules(staffB, shiftA, currentState, context)) return false;
+
+    return true;
+  } finally {
+    // Always restore — try/finally guarantees execution on every return path.
+    if (draftAAdded) currentState.removeAssignment(draftA);
+    currentState.addAssignment(a);
+    currentState.addAssignment(b);
+  }
 }
 
 /**
@@ -183,7 +323,7 @@ export function localSearch(
   let assignments = [...result.assignments];
 
   // Build state once — updated incrementally on every accepted swap
-  let state = new SchedulerState();
+  const state = new SchedulerState();
   for (const a of assignments) state.addAssignment(a);
 
   let currentPenalty = computeTotalPenalty(assignments, state, context, weights);
@@ -209,7 +349,6 @@ export function localSearch(
 
     if (!isSwapValid(state, assignments, i, j, context)) continue;
 
-    // Build the swapped assignment list
     const a = assignments[i];
     const b = assignments[j];
     const shiftA = context.shiftMap.get(a.shiftId)!;
@@ -232,28 +371,25 @@ export function localSearch(
       floatFromUnit: staffA.homeUnit && staffA.homeUnit !== shiftB.unit ? (staffA.homeUnit ?? null) : null,
     };
 
-    const swapped = [...assignments];
-    swapped[i] = newA;
-    swapped[j] = newB;
-
-    // Build candidate state incrementally
-    const candidateState = state.clone();
-    candidateState.removeAssignment(a);
-    candidateState.removeAssignment(b);
-    candidateState.addAssignment(newA);
-    candidateState.addAssignment(newB);
-
-    const newPenalty = computeTotalPenalty(swapped, candidateState, context, weights);
+    // Delta penalty: only re-scores the ~15-30 affected assignments instead of
+    // all ~280.  Temporarily mutates and restores state internally.
+    const delta = computeSwapDeltaPenalty(a, b, newA, newB, state, context, weights);
+    const newPenalty = currentPenalty + delta;
 
     // Late Acceptance: accept if no worse than K iterations ago
     if (newPenalty <= laBuffer[laIdx]) {
-      assignments = swapped;
-      state = candidateState;
+      // Commit the swap permanently
+      state.removeAssignment(a);
+      state.removeAssignment(b);
+      state.addAssignment(newA);
+      state.addAssignment(newB);
+      assignments[i] = newA;
+      assignments[j] = newB;
       currentPenalty = newPenalty;
 
       if (newPenalty < bestPenalty) {
         bestPenalty = newPenalty;
-        bestAssignments = [...swapped];
+        bestAssignments = [...assignments];
       }
     }
 
@@ -300,16 +436,22 @@ export function overtimeReductionSweep(
   context: SchedulerContext,
   weights: WeightProfile
 ): AssignmentDraft[] {
-  let assignments = [...initialAssignments];
+  const assignments = [...initialAssignments];
 
   // Build state once — updated incrementally on each accepted swap
-  let state = new SchedulerState();
+  const state = new SchedulerState();
   for (const a of assignments) state.addAssignment(a);
 
   let currentPenalty = computeTotalPenalty(assignments, state, context, weights);
   let madeProgress = true;
+  let sweepIter = 0;
+  const MAX_SWEEP_ITERS = 500;
 
   while (madeProgress) {
+    if (++sweepIter > MAX_SWEEP_ITERS) {
+      console.warn(`[scheduler] overtimeReductionSweep: hit ${MAX_SWEEP_ITERS}-iteration cap`);
+      break;
+    }
     madeProgress = false;
     recomputeOvertimeFlags(assignments); // refresh flags before each pass
 
@@ -351,21 +493,15 @@ export function overtimeReductionSweep(
               : null,
         };
 
-        const swapped = [...assignments];
-        swapped[otIdx] = newA;
-        swapped[j] = newB;
-
-        const candidateState = state.clone();
-        candidateState.removeAssignment(a);
-        candidateState.removeAssignment(b);
-        candidateState.addAssignment(newA);
-        candidateState.addAssignment(newB);
-
-        const newPenalty = computeTotalPenalty(swapped, candidateState, context, weights);
-        if (newPenalty < currentPenalty) {
-          assignments = swapped;
-          state = candidateState;
-          currentPenalty = newPenalty;
+        const delta = computeSwapDeltaPenalty(a, b, newA, newB, state, context, weights);
+        if (delta < 0) {
+          state.removeAssignment(a);
+          state.removeAssignment(b);
+          state.addAssignment(newA);
+          state.addAssignment(newB);
+          assignments[otIdx] = newA;
+          assignments[j] = newB;
+          currentPenalty += delta;
           madeProgress = true;
           break outer; // restart sweep with updated state
         }
@@ -373,6 +509,7 @@ export function overtimeReductionSweep(
     }
   }
 
+  console.log(`[scheduler] overtimeReductionSweep: ${sweepIter} iterations`);
   return assignments;
 }
 
@@ -393,16 +530,22 @@ export function weekendRedistributionSweep(
   context: SchedulerContext,
   weights: WeightProfile
 ): AssignmentDraft[] {
-  let assignments = [...initialAssignments];
+  const assignments = [...initialAssignments];
 
   // Build state once — updated incrementally on each accepted swap
-  let state = new SchedulerState();
+  const state = new SchedulerState();
   for (const a of assignments) state.addAssignment(a);
 
   let currentPenalty = computeTotalPenalty(assignments, state, context, weights);
   let madeProgress = true;
+  let sweepIter = 0;
+  const MAX_SWEEP_ITERS = 500;
 
   while (madeProgress) {
+    if (++sweepIter > MAX_SWEEP_ITERS) {
+      console.warn(`[scheduler] weekendRedistributionSweep: hit ${MAX_SWEEP_ITERS}-iteration cap`);
+      break;
+    }
     madeProgress = false;
 
     // Compute weekend-shift count per staff (include staff with 0 weekend shifts)
@@ -472,21 +615,15 @@ export function weekendRedistributionSweep(
               : null,
         };
 
-        const swapped = [...assignments];
-        swapped[exIdx] = newA;
-        swapped[j] = newB;
-
-        const candidateState = state.clone();
-        candidateState.removeAssignment(a);
-        candidateState.removeAssignment(b);
-        candidateState.addAssignment(newA);
-        candidateState.addAssignment(newB);
-
-        const newPenalty = computeTotalPenalty(swapped, candidateState, context, weights);
-        if (newPenalty < currentPenalty) {
-          assignments = swapped;
-          state = candidateState;
-          currentPenalty = newPenalty;
+        const delta = computeSwapDeltaPenalty(a, b, newA, newB, state, context, weights);
+        if (delta < 0) {
+          state.removeAssignment(a);
+          state.removeAssignment(b);
+          state.addAssignment(newA);
+          state.addAssignment(newB);
+          assignments[exIdx] = newA;
+          assignments[j] = newB;
+          currentPenalty += delta;
           madeProgress = true;
           break outer; // restart sweep with updated counts
         }
@@ -494,5 +631,6 @@ export function weekendRedistributionSweep(
     }
   }
 
+  console.log(`[scheduler] weekendRedistributionSweep: ${sweepIter} iterations`);
   return assignments;
 }

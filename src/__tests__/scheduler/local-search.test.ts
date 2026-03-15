@@ -72,6 +72,7 @@ function makeContext(
   return {
     scheduleId: "sched-1",
     shifts,
+    shiftMap: new Map(shifts.map((s) => [s.id, s])),
     staffList: staff,
     staffMap: new Map(staff.map((s) => [s.id, s])),
     prnAvailability: [],

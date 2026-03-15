@@ -64,19 +64,24 @@ export function generateSchedule(
 
   const context = buildSchedulerContext(scheduleId);
 
+  const _t0 = Date.now();
+
   // Phase 1: Greedy construction
   // Use greedyWeights if provided — allows the caller to separate the
   // "build a feasible schedule" objective from the "optimise for X" objective.
   const greedy = greedyConstruct(context, greedyWeights ?? weights);
+  const _t1 = Date.now();
 
   // Phase 1.5: Repair hard violations
   // Attempts to fix remaining charge / Level-4+ / understaffing violations by
   // moving specialised staff from lower-priority shifts into critical slots,
   // then back-filling the vacated slots with generalist nurses.
   const repaired = repairHardViolations(greedy, context);
+  const _t2 = Date.now();
 
   // Phase 2: Local search improvement (Late Acceptance metaheuristic)
   const improved = localSearch(repaired, context, weights, localSearchIterations, resolvedSeed);
+  const _t3 = Date.now();
 
   // Phase 3 (display fix): Recompute isOvertime in calendar order.
   // Construction uses most-constrained-first ordering, so weekend shifts are
@@ -92,6 +97,7 @@ export function generateSchedule(
   // weekend equity because computeTotalPenalty uses the variant's own weights.
   const afterOTSweep = overtimeReductionSweep(improved.assignments, context, weights);
   recomputeOvertimeFlags(afterOTSweep); // refresh flags after sweep
+  const _t4 = Date.now();
 
   // Phase 5: Targeted weekend-redistribution sweep.
   // Deterministically tries to move weekend assignments from staff with above-
@@ -101,6 +107,13 @@ export function generateSchedule(
   // swaps that would increase overtime cost.
   const finalAssignments = weekendRedistributionSweep(afterOTSweep, context, weights);
   recomputeOvertimeFlags(finalAssignments); // refresh OT flags after potential staff moves
+  const _t5 = Date.now();
+
+  console.log(
+    `[scheduler] ${context.shifts.length} shifts / ${context.staffList.filter(s => s.isActive).length} active staff` +
+    ` | greedy: ${_t1-_t0}ms, repair: ${_t2-_t1}ms, localSearch(${localSearchIterations}): ${_t3-_t2}ms` +
+    `, OTsweep: ${_t4-_t3}ms, weekendSweep: ${_t5-_t4}ms, total: ${_t5-_t0}ms`
+  );
 
   return { assignments: finalAssignments, understaffed: improved.understaffed };
 }

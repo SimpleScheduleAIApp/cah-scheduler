@@ -45,6 +45,7 @@ export async function GET(
   const context: SchedulerContext = {
     scheduleId,
     shifts: [...ruleContext.shiftMap.values()],
+    shiftMap: ruleContext.shiftMap,
     staffList: [...ruleContext.staffMap.values()],
     staffMap: ruleContext.staffMap,
     prnAvailability: ruleContext.prnAvailability,

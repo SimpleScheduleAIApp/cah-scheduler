@@ -200,17 +200,27 @@ export default function ScheduleBuilderPage() {
       }
     }
 
-    // Attach staff-level violations to each shift the staff member is assigned to
+    // Attach staff-level violations to each shift the staff member is assigned to.
+    // Weekend-specific violations (consecutive-weekends, weekend-fairness) are only
+    // relevant on Sat/Sun shifts — showing them on weekday shifts is misleading since
+    // there is nothing a manager can do about a consecutive-weekend issue from a Monday shift.
+    const WEEKEND_ONLY_RULE_IDS = new Set(["consecutive-weekends", "weekend-fairness"]);
     for (const shift of schedule.shifts) {
+      const isWeekendShift = [0, 6].includes(new Date(shift.date).getDay());
       for (const assignment of shift.assignments) {
         const staffViolations = staffViolationMap.get(assignment.staffId);
         if (!staffViolations?.length) continue;
 
+        const relevantViolations = staffViolations.filter(
+          (v) => !WEEKEND_ONLY_RULE_IDS.has(v.ruleId) || isWeekendShift
+        );
+        if (!relevantViolations.length) continue;
+
         const softList = softViolationMap.get(shift.id) ?? [];
-        softViolationMap.set(shift.id, [...softList, ...staffViolations.map((v) => v.description)]);
+        softViolationMap.set(shift.id, [...softList, ...relevantViolations.map((v) => v.description)]);
 
         const details = violationDetailsMap.get(shift.id) ?? [];
-        violationDetailsMap.set(shift.id, [...details, ...staffViolations]);
+        violationDetailsMap.set(shift.id, [...details, ...relevantViolations]);
       }
     }
   }

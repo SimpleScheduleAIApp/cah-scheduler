@@ -107,6 +107,7 @@ function makeContext(staffList: StaffInfo[], shifts: ShiftInfo[]): SchedulerCont
   return {
     scheduleId: SCHEDULE_ID,
     shifts,
+    shiftMap: new Map(shifts.map((s) => [s.id, s])),
     staffList,
     staffMap: new Map(staffList.map((s) => [s.id, s])),
     prnAvailability: [],
